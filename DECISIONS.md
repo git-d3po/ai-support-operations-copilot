@@ -874,3 +874,119 @@ in code comments (`PipelineStepKey = AgentKey | "classifier"`).
 **When we'd reconsider:** If more non-agent pipeline steps that call
 models are added later, the same `PipelineStepKey` pattern extends
 directly.
+
+---
+
+## 2026-09-18 — Enforcing, not just prompting for, grounded policy citations
+
+**Context:** A deep implementation audit (see AUDIT.md, Audit #3) asked
+specifically whether policy citations are *actually* grounded in the
+synthetic policy data or merely model-invented references. Reading the
+code (not just the prompts) showed the answer was "prompted for, but not
+verified": `PolicyReferenceSchema` validates that a citation is shaped
+like `{slug: string, title: string}`, but nothing checked that the slug
+was real or was among the policies actually retrieved and shown to the
+model for that specific call. A model could, in principle, cite a
+plausible-sounding but fabricated or previously-seen-elsewhere slug, and
+it would flow through validation, into `resolveOutcome()` (for the Policy
+Agent's `policyDecision`, which drives real `refund_customer`/
+`deny_request` actions), into the UI, and into evaluation scoring — all
+looking exactly as "grounded" as a real citation.
+
+**Options considered:** (a) Trust the prompt instructions alone (already
+strongly worded: "Ground your decision ONLY in the policy text provided,"
+"do not force-fit an unrelated policy") and rely on evaluation to catch
+drift over time; (b) add a code-level check, after parsing, that any cited
+slug is a member of the specific policy list retrieved for that call — not
+just any real `Policy` row, but the ones this call actually saw.
+
+**Decision made:** (b). `src/lib/orchestrator/evidence.ts` adds
+`filterGroundedPolicyReferences()` and `isPolicyGrounded()`. Every agent
+that can emit a policy citation now enforces this after parsing:
+- **Policy Agent** (`policyAgent.ts`): if `policyDecision.applicablePolicy
+  .slug` isn't grounded, the decision is discarded entirely (`policyDecision:
+  null`, confidence reset to 0, a new `ungrounded_policy_citation` flag
+  added) — `resolveOutcome()` already treats a null decision as "needs
+  human review," so this fails safe automatically, with no resolve.ts
+  changes needed. Its `policyReferences` array is filtered the same way.
+- **Risk Agent** (`riskAgent.ts`): its citations are filtered the same way,
+  but since its core decision (`escalationRecommended`/`targetTeam`) isn't
+  citation-dependent, an ungrounded reference is just stripped rather than
+  invalidating the whole finding. Its prompt was also fixed — it previously
+  showed a JSON template with `"policyReferences":[]` hardcoded, which
+  actively discouraged citing the security/escalation policy it's supposed
+  to be grounded in; the prompt now explicitly asks it to cite the policy
+  that informed its decision.
+- **Billing and Technical Agents**: never shown any policy documents in
+  the first place, so any citation they emit is filtered against an empty
+  set — i.e., always stripped. This formalizes what their prompts already
+  implied ("policyReferences": always `[]`) as an enforced guarantee
+  instead of a hoped-for convention.
+
+**Rationale:** This is the general principle CLAUDE.md already states
+("never allow malformed model output to silently enter the system")
+applied to a case the schema alone can't catch, because a fabricated
+citation isn't malformed JSON — it's valid-shaped, wrong content. A
+mechanical, O(1) membership check is cheap, requires no product-direction
+judgment, and closes a real gap between what the product claims ("policy
+citations are grounded in synthetic policy data") and what the code
+previously guaranteed (nothing, beyond a strongly-worded prompt).
+
+**Tradeoffs:** None material — this only removes citations that were
+never legitimate, and its failure mode (treat as "no decision," escalate
+for review) is the same conservative failure mode already used for parse
+failures.
+
+**When we'd reconsider:** If agents ever need to cite something outside
+their own retrieved set on purpose (not anticipated), this check would
+need an explicit opt-out rather than being loosened generally.
+
+---
+
+## 2026-09-18 — Evaluation scorer must accept policy grounding cited by any agent, not only the Policy Agent
+
+**Context:** The same audit checked whether the evaluation scorer's
+criteria actually correspond to the pipeline's real outputs. The
+`suspicious-activity` curated scenario expects `expectedPolicySlug:
+"account-security-policy"` but does **not** expect the Policy Agent to run
+at all (`expectedAgents: ["risk", "response"]`) — by design, a suspected
+compromise is supposed to be grounded in that policy via the *Risk*
+agent's citation, escalating directly, without a separate Policy Agent
+decision. `scoreOutcome()`'s `policyCorrect` dimension, however, only ever
+read the Policy Agent's own `policyDecision.applicablePolicy.slug`. For
+this scenario, that's always `null` (no Policy Agent finding exists to
+read), so `policyCorrect` would score `false` even when the pipeline
+behaves exactly as intended — and because `policyCorrect` carries weight
+1.5 in `overallScore`, this alone could push a genuinely correct run for
+this scenario below `PASS_THRESHOLD` (0.85), misreporting a correct
+behavior as a failure.
+
+**Options considered:** (a) Change the scenario's `expectedPolicySlug` to
+`null` for this case, since Policy Agent doesn't run — but that would stop
+checking a real, meaningful property (is the escalation actually grounded
+in the right policy) that the scenario is specifically designed to test;
+(b) make `scoreOutcome()` check the Policy Agent's decision first, and if
+that doesn't match, fall back to checking whether *any* agent's
+(grounding-enforced) `policyReferences` cites the expected slug.
+
+**Decision made:** (b) — `src/lib/evaluation/score.ts`.
+
+**Rationale:** Option (a) would be papering over the scorer's limitation
+by weakening what's tested, exactly backwards from what an evaluation
+suite is for. Option (b) matches how the product itself is designed:
+policy grounding can legitimately come from more than one agent (Policy's
+formal decision, or Risk's citation of the policy that drove an
+escalation), and the scorer should recognize either, since the fallback
+only ever checks *actual* `policyReferences` — which are themselves
+grounding-enforced (see the decision above) — never a claim made without
+a real citation somewhere in the outcome.
+
+**Tradeoffs:** None material. This makes `policyCorrect` slightly more
+permissive (any agent's citation counts, not just Policy's), which is
+correct given the product's own multi-agent design, not a loosening of
+rigor.
+
+**When we'd reconsider:** If a future scenario needs to specifically
+verify that the *Policy Agent itself* (not any other agent) grounds a
+decision, that would need a separate, more specific expected-outcome
+field — not a reason to revert this fallback for the general case.

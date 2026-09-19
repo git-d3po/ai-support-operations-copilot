@@ -117,3 +117,93 @@ cleanup (ENG-8). Re-ran the full suite after fixes — `typecheck`, `lint`,
 No P0s found. Remaining items are P2 or, in PM-5's case, correctly
 deferred pending a user-provided API key and explicit go-ahead — not a
 defect.
+
+---
+
+## Audit #3 — Deep implementation audit: agent behavior and evidence flow (2026-09-18)
+
+Requested explicitly as a code-reading audit, not a documentation review:
+verify (by reading the actual agent/orchestrator/scorer code, not the
+tests or docs) that each of 10 specific properties genuinely holds. No
+live model call was made; no API key was used or requested. Scope:
+`src/lib/orchestrator/**`, `src/lib/ai/schemas.ts`, `src/lib/evaluation/**`,
+`prisma/data/scenarios.ts`.
+
+### What's genuinely strong (verified by reading, not assuming)
+
+- **Distinct agent responsibilities (item 1).** Each of the 5 agents'
+  system prompts differs in framing, permitted output shape, and
+  decision type — Billing surfaces facts only ("you do not decide policy
+  questions"), Policy decides permission grounded only in retrieved text,
+  Technical diagnoses against docs only, Risk is an escalation gate that
+  reads every other agent's findings, Response communicates a decision it
+  is explicitly forbidden from inventing. Confirmed these are not a
+  templated prompt with swapped nouns.
+- **Context minimization (item 2).** Verified per agent: Technical never
+  sees billing or policy data (only product docs + conversation); Billing
+  never sees policy documents; Risk sees other agents' *summaries* via
+  `priorFindings`, not their raw source data; Response sees the resolution
+  and finding summaries, never raw invoices/policies. Each agent's
+  `buildRequest()` was read directly to confirm this, not inferred from
+  comments.
+- **Real data flow (item 5).** `context.ts`'s `loadTicketContext()` is a
+  real Prisma query against `Customer`/`Account`/`Subscription`/
+  `Invoice`/`Transaction`/`Policy`/`ProductDoc` — confirmed no
+  agent-visible field is synthesized or hardcoded outside the seed data.
+- **Response agent conditioning (item 6).** `responseAgent.ts`'s
+  `buildRequest()` throws if `context.resolution` is absent, and its
+  prompt includes the literal resolution `action`/`summary`.
+  `orchestrator.test.ts` has a dedicated test that fails if the Response
+  agent's prompt doesn't already contain the resolution — this is
+  structurally enforced, not just documented.
+- **Classifier → routing (item 7).** `selectAgents()` reads
+  `classification.domains`/`.intent`/`.sentiment` directly; `orchestrator
+  .ts` passes the real `classifyTicket()` output into it. No hardcoded
+  routing path exists.
+- **Malformed output can't silently succeed (item 8).** Traced the full
+  path: `parseStructuredOutput` → `callWithStructuredRetry` (2 attempts) →
+  `runStructuredStep` (`data: null` on final failure, real metrics
+  accumulated across attempts) → every agent's `run()` uses `data ??
+  degraded...Finding(...)`. No code path turns a failed parse into a
+  finding that looks successful.
+- **Resolution genuinely consumes findings (items 3, 9).** `resolve.ts`
+  reads `policyDecision.decision`, `escalationRecommended`/`targetTeam`/
+  `severity`, and specific `flags` — not placeholders. Traced all 12 rules
+  against all 10 curated scenarios' expected outcomes by hand; each
+  scenario's expected resolution is reachable through the actual rule
+  order given a classifier output matching its `expectedOutcome`.
+- **Persisted record fidelity (item 10, UI half).** `TicketDetailPage`
+  renders exactly the persisted `finding`/`resolution`/`escalation`/
+  `response` JSON with no re-derivation or hardcoding.
+
+### What was superficial or misleading (the real findings)
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| ENG-9 | **Policy citations were prompted for but not enforced (item 4).** `PolicyReferenceSchema` validates shape only (`{slug: string, title: string}`) — nothing checked that a cited slug was ever actually retrieved and shown to the model for that call. A hallucinated or stale slug would have passed validation, driven `resolveOutcome()`'s `refund_customer`/`deny_request` branch, rendered in the UI as if verified, and scored as "correct" in evaluation if it happened to match. | **P1** | **Fixed** — `evidence.ts` adds `filterGroundedPolicyReferences()`/`isPolicyGrounded()`; Policy Agent nulls an ungrounded decision entirely (flag `ungrounded_policy_citation`); Risk Agent strips ungrounded citations; Billing/Technical citations are always stripped (they're never shown policies). See DECISIONS.md. |
+| ENG-10 | **The evaluation scorer's `policyCorrect` dimension only read the Policy Agent's own decision — never any other agent's citation.** The `suspicious-activity` scenario expects policy grounding via the *Risk* agent (Policy Agent isn't even expected to run for it), so `policyCorrect` would score `false` for that scenario even on a perfectly correct run, and — because it carries weight 1.5 — could push a correct run's `overallScore` below the 0.85 pass threshold, misreporting correct behavior as failed. Found by manually cross-checking every scenario's `expectedAgents` against what `score.ts` actually reads, not by running the suite. | **P1** | **Fixed** — `score.ts` now falls back to checking whether *any* agent's (grounding-enforced) `policyReferences` cites the expected slug when the Policy Agent's own decision doesn't match. See DECISIONS.md. |
+| ENG-11 | `AgentInvocation.startedAt`/`finishedAt` are back-computed from each invocation's own `latencyMs` at persist time, all relative to the *same* shared `now` — every invocation in a run gets an identical `finishedAt`, which misrepresents agents that actually ran sequentially as if they finished simultaneously. `latencyMs` (duration) itself is accurate; only the derived timestamps are approximate. | P2 | Not fixed — no decision or evaluation logic depends on these specific timestamps, only on `latencyMs`, which is correct. Logged in TODO.md; the real fix (threading actual wall-clock timestamps through `AgentResult`) is a small, well-contained change if AI Operations ever wants to show a real timeline rather than just durations. |
+| ENG-12 | `KNOWN_AGENT_FLAGS.NO_BILLING_ISSUE_FOUND` is documented as an available Billing Agent flag but has no dedicated branch in `resolveOutcome()` — it falls through to the generic confidence-based default (rule 12), which happens to produce reasonable behavior, but the flag is otherwise inert. | P2 | Not fixed — behavior is already correct via the default rule; this is a minor consistency note (every flag "clearly" consumed vs. safely defaulted), not a bug. Logged in TODO.md. |
+
+### Scenario/scorer cross-check (the other half of this audit)
+
+Went through all 10 curated scenarios in `prisma/data/scenarios.ts`
+against `resolve.ts`'s rule order and `score.ts`'s dimensions by hand:
+9 of 10 scenarios' scoring logic was already correct as designed; the
+10th (`suspicious-activity`) surfaced ENG-10 above, now fixed. No other
+scenario has an `expectedPolicySlug` set without `"policy"` in
+`expectedAgents`, so this was the only instance of that particular gap.
+
+### Outcome
+
+2 P1s found and fixed (ENG-9, ENG-10) — both required code changes across
+multiple files (`evidence.ts`, `policyAgent.ts`, `riskAgent.ts`,
+`billingAgent.ts`, `technicalAgent.ts`, `score.ts`) plus 9 new/updated unit
+tests locking the new behavior in. Re-ran the full suite after fixes:
+`typecheck`, `lint`, **122** unit tests (up from 113), 6 integration
+tests, `build`, and 9/9 e2e tests all green — including the real,
+seeded-database e2e run, confirming the grounding fix doesn't break a
+genuinely-grounded citation. 2 P2 observations logged (ENG-11, ENG-12),
+not fixed, both cosmetic/consistency issues with no effect on any
+decision or score. No API key was used or requested at any point in this
+audit.

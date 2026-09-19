@@ -103,6 +103,28 @@ export function retrieveRelevantPolicies(
   return policies.filter((p) => categories.includes(p.category) || always.has(p.slug));
 }
 
+/**
+ * A model can cite a policy slug/title that was never actually shown to
+ * it — the schema only checks shape (two strings), not that the citation
+ * is real. This is the enforcement layer: a citation only counts as
+ * grounded if its slug is among the policies actually retrieved and put
+ * in that call's prompt. Used to filter `AgentFinding.policyReferences`
+ * and to validate `PolicyDecision.applicablePolicy` before either is
+ * allowed to drive resolution or render as if verified. See DECISIONS.md
+ * ("Enforcing, not just prompting for, grounded policy citations").
+ */
+export function filterGroundedPolicyReferences<T extends { slug: string }>(
+  references: T[],
+  retrievedPolicies: TicketDataContext["policies"],
+): T[] {
+  const validSlugs = new Set(retrievedPolicies.map((p) => p.slug));
+  return references.filter((ref) => validSlugs.has(ref.slug));
+}
+
+export function isPolicyGrounded(slug: string, retrievedPolicies: TicketDataContext["policies"]): boolean {
+  return retrievedPolicies.some((p) => p.slug === slug);
+}
+
 const STOPWORDS = new Set([
   "the", "and", "for", "that", "this", "with", "have", "from", "your", "you",
   "are", "was", "were", "been", "being", "has", "had", "our", "their", "them",

@@ -59,6 +59,17 @@ DECISIONS.md. This is what's left.
 
 ## Smaller / cleanup
 
+- `AgentInvocation.startedAt`/`finishedAt` are back-computed approximations
+  (all invocations in a run share the same `finishedAt`) that don't
+  reflect real sequential timing — `latencyMs` itself is accurate, only
+  the derived timestamps aren't (AUDIT.md ENG-11). Fix by threading real
+  wall-clock timestamps through `AgentResult` if AI Operations ever wants
+  a real timeline view rather than durations.
+- `KNOWN_AGENT_FLAGS.NO_BILLING_ISSUE_FOUND` has no dedicated
+  `resolveOutcome()` branch — it falls through to the generic
+  confidence-based default, which is already correct behavior, just
+  implicit (AUDIT.md ENG-12). Not a bug; add an explicit branch only if
+  it stops being obviously correct.
 - `vitest.config.ts` / `vitest.integration.config.ts` print a benign Vite
   ESM/CJS warning (AUDIT.md ENG-5) — revisit if the project ever adopts
   `"type": "module"`.

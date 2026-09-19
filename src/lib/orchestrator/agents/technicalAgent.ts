@@ -1,5 +1,5 @@
 import { AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
-import { retrieveRelevantProductDocs } from "../evidence";
+import { filterGroundedPolicyReferences, retrieveRelevantProductDocs } from "../evidence";
 import { formatConversation, formatProductDocs, buildSystemPrompt, JSON_ONLY_INSTRUCTION } from "../prompts";
 import { runStructuredStep } from "../runStructuredStep";
 import type { AgentContext, AgentResult, SpecialistAgent } from "../types";
@@ -44,8 +44,11 @@ export const technicalAgent: SpecialistAgent = {
       AgentFindingSchema,
       (retryContext) => buildRequest(context, retryContext),
     );
+    // Technical is never shown any policy documents (only product docs) —
+    // see billingAgent.ts for why this is stripped anyway.
+    const finding = data ? { ...data, policyReferences: filterGroundedPolicyReferences(data.policyReferences, []) } : degradedAgentFinding("technical", parseError!);
     return {
-      finding: data ?? degradedAgentFinding("technical", parseError!),
+      finding,
       metrics,
     };
   },

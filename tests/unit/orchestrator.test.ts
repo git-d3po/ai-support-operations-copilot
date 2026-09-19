@@ -8,6 +8,17 @@ afterEach(() => {
   _resetProvidersForTests();
 });
 
+// The Policy agent's citation is only trusted if the cited slug was
+// actually retrieved for that call (see policyAgent.ts's grounding
+// enforcement, AUDIT.md Audit #3) — these tests' account context must
+// include the policy they expect the mock to "cite."
+const DUPLICATE_CHARGE_POLICY = {
+  slug: "duplicate-charge-policy",
+  title: "Duplicate Charge Policy",
+  category: "billing",
+  body: "Two identical charges on the same invoice within 48 hours are refunded in full.",
+};
+
 const DUPLICATE_BILLING_RESPONSES = {
   ticket_classification: JSON.stringify({
     intent: "duplicate_charge",
@@ -55,7 +66,7 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
       ticketId: "test-ticket",
       ticketSummary: "Charged twice this billing cycle",
       conversation: [{ author: "customer", body: "I was charged twice for $399." }],
-      accountContext: makeAccountContext(),
+      accountContext: makeAccountContext({ policies: [DUPLICATE_CHARGE_POLICY] }),
     });
 
     expect(outcome.classification.intent).toBe("duplicate_charge");
@@ -89,7 +100,7 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
       ticketId: "test-ticket",
       ticketSummary: "Charged twice this billing cycle",
       conversation: [],
-      accountContext: makeAccountContext(),
+      accountContext: makeAccountContext({ policies: [DUPLICATE_CHARGE_POLICY] }),
     });
 
     expect(outcome.response?.body).toBe("ok");

@@ -28,19 +28,33 @@ export function scoreOutcome(
   const expectedInvestigativeAgents = expected.expectedAgents.filter((key) => key !== "response");
   const routingCorrect = sameAgentSet(investigativeAgents, expectedInvestigativeAgents);
 
-  const policyFinding = outcome.agentResults.map((r) => r.finding).find(isPolicyFinding);
+  const allFindings = outcome.agentResults.map((r) => r.finding);
+  const policyFinding = allFindings.find(isPolicyFinding);
   const actualPolicySlug = policyFinding?.policyDecision?.applicablePolicy.slug ?? null;
+
+  // Not every scenario that hinges on a policy expects the Policy Agent
+  // itself to run — e.g. a suspected-compromise ticket is expected to be
+  // grounded in the Account Security Policy via the RISK agent's citation,
+  // not a Policy Agent decision (Policy isn't even in `expectedAgents` for
+  // that case). So a match against the Policy Agent's own decision is
+  // sufficient but not necessary: if it doesn't match, fall back to
+  // checking whether *any* agent cited the expected slug in its
+  // (grounding-enforced — see policyAgent.ts/riskAgent.ts) policyReferences
+  // before concluding the citation is actually missing.
+  const anyAgentCitedExpectedSlug = (slug: string) =>
+    allFindings.some((f) => f.policyReferences.some((ref) => ref.slug === slug));
+
   const policyCorrect =
-    expected.expectedPolicySlug === null ? null : actualPolicySlug === expected.expectedPolicySlug;
+    expected.expectedPolicySlug === null
+      ? null
+      : actualPolicySlug === expected.expectedPolicySlug || anyAgentCitedExpectedSlug(expected.expectedPolicySlug);
 
   const actualEscalation = outcome.escalation !== null;
   const escalationCorrect = actualEscalation === expected.expectedEscalation;
 
   const resolutionCorrect = outcome.resolution.action === expected.expectedAction;
 
-  const investigativeFindings = outcome.agentResults
-    .map((r) => r.finding)
-    .filter((f) => f.agentKey !== "response");
+  const investigativeFindings = allFindings.filter((f) => f.agentKey !== "response");
   const evidenceQuality =
     investigativeFindings.length === 0
       ? 1 // nothing was expected to investigate — vacuously fine

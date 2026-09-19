@@ -114,6 +114,10 @@ export const KNOWN_AGENT_FLAGS = {
   KNOWN_ISSUE_WORKAROUND_ALREADY_TRIED: "known_issue_workaround_already_tried",
   REQUIRES_ESCALATION: "requires_escalation",
   AUTO_RESOLVABLE: "auto_resolvable",
+  /** Set when a model cited a policy slug that wasn't among the policies
+   * actually retrieved and shown to it for that call — see
+   * evidence.ts's filterGroundedPolicyReferences()/isPolicyGrounded(). */
+  UNGROUNDED_POLICY_CITATION: "ungrounded_policy_citation",
 } as const;
 
 // ---------------------------------------------------------------------------

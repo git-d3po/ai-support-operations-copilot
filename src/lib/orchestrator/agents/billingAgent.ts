@@ -1,5 +1,5 @@
 import { AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
-import { detectDuplicateCharges, mostRecentFailedCharge } from "../evidence";
+import { detectDuplicateCharges, filterGroundedPolicyReferences, mostRecentFailedCharge } from "../evidence";
 import {
   formatInvoices,
   formatTransactions,
@@ -69,8 +69,14 @@ export const billingAgent: SpecialistAgent = {
       AgentFindingSchema,
       (retryContext) => buildRequest(context, retryContext),
     );
+    // Billing is never shown any policy documents (see buildRequest above),
+    // so it has nothing legitimate to cite — strip any citation anyway in
+    // case the model invents one. Same enforcement as Policy/Risk agents;
+    // see DECISIONS.md ("Enforcing, not just prompting for, grounded
+    // policy citations").
+    const finding = data ? { ...data, policyReferences: filterGroundedPolicyReferences(data.policyReferences, []) } : degradedAgentFinding("billing", parseError!);
     return {
-      finding: data ?? degradedAgentFinding("billing", parseError!),
+      finding,
       metrics,
     };
   },

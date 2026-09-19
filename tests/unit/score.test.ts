@@ -160,4 +160,74 @@ describe("scoreOutcome", () => {
 
     expect(someWrong.overallScore).toBeLessThan(allCorrect.overallScore);
   });
+
+  // Regression coverage for the "suspicious-activity"-style scenario: the
+  // expected policy grounding comes from the RISK agent's citation, not a
+  // Policy Agent decision — Policy isn't even expected to run. See
+  // AUDIT.md, Audit #3, and DECISIONS.md ("Evaluation scorer must accept
+  // policy grounding cited by any agent, not only the Policy Agent").
+  describe("policy grounding cited by a non-Policy agent (e.g. Risk)", () => {
+    function riskOnlyOutcome(riskPolicyReferences: { slug: string; title: string }[]): OrchestrationOutcome {
+      return {
+        classification: {
+          intent: "account_security",
+          domains: ["risk"],
+          sentiment: "urgent",
+          confidence: 0.9,
+          summary: "x",
+          keyEvidence: [],
+        },
+        classificationFailed: false,
+        classificationMetrics: { model: "m", inputTokens: 1, outputTokens: 1, latencyMs: 1, estimatedCostUsd: 0 },
+        agentsInvoked: ["risk", "response"],
+        agentResults: [
+          {
+            finding: {
+              agentKey: "risk",
+              summary: "Suspected compromise.",
+              evidence: ["unrecognized login"],
+              confidence: 0.9,
+              policyReferences: riskPolicyReferences,
+              flags: [],
+              escalationRecommended: true,
+              escalationReason: "x",
+              targetTeam: "trust_and_safety",
+              severity: "critical",
+            },
+            metrics: { model: "m", latencyMs: 1 },
+          },
+          {
+            finding: { agentKey: "response", summary: "x", evidence: [], confidence: 0.9, policyReferences: [], flags: [] },
+            metrics: { model: "m", latencyMs: 1 },
+            response: { body: "x", tone: "neutral", nextSteps: [] },
+          },
+        ],
+        resolution: { action: "escalate", summary: "x", confidence: 0.9, requiresHumanReview: true },
+        escalation: { required: true, reason: "x", targetTeam: "trust_and_safety", severity: "critical" },
+        response: { body: "x", tone: "neutral", nextSteps: [] },
+      };
+    }
+
+    const expected = expectedOutcome({
+      expectedIntent: "account_security",
+      expectedAgents: ["risk", "response"],
+      expectedPolicySlug: "account-security-policy",
+      expectedEscalation: true,
+      expectedAction: "escalate",
+    });
+
+    it("scores policyCorrect=true when Risk (not Policy) cites the expected slug", () => {
+      const outcome = riskOnlyOutcome([{ slug: "account-security-policy", title: "Account Security Policy" }]);
+      const result = scoreOutcome(expected, outcome);
+      expect(result.policyCorrect).toBe(true);
+      expect(result.routingCorrect).toBe(true);
+    });
+
+    it("scores policyCorrect=false when no agent actually cites the expected slug", () => {
+      const outcome = riskOnlyOutcome([]);
+      const result = scoreOutcome(expected, outcome);
+      expect(result.policyCorrect).toBe(false);
+      expect(result.notes).toContain("policy");
+    });
+  });
 });

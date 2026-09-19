@@ -3,6 +3,8 @@ import {
   chargebackCount,
   daysSince,
   detectDuplicateCharges,
+  filterGroundedPolicyReferences,
+  isPolicyGrounded,
   mostRecentFailedCharge,
   mostRecentInvoice,
   mostRecentSucceededCharge,
@@ -186,5 +188,42 @@ describe("retrieveRelevantProductDocs", () => {
   it("returns an empty array when nothing overlaps", () => {
     const result = retrieveRelevantProductDocs(docs, "unrelated question about pricing tiers");
     expect(result).toEqual([]);
+  });
+});
+
+describe("filterGroundedPolicyReferences / isPolicyGrounded", () => {
+  const retrieved = [
+    { slug: "refund-policy", title: "Refund Policy", category: "refunds", body: "" },
+    { slug: "escalation-policy", title: "Escalation Policy", category: "escalation", body: "" },
+  ];
+
+  it("keeps only references whose slug was actually retrieved", () => {
+    const result = filterGroundedPolicyReferences(
+      [
+        { slug: "refund-policy", title: "Refund Policy" },
+        { slug: "made-up-policy", title: "Invented" },
+      ],
+      retrieved,
+    );
+    expect(result).toEqual([{ slug: "refund-policy", title: "Refund Policy" }]);
+  });
+
+  it("returns an empty array when nothing was retrieved", () => {
+    const result = filterGroundedPolicyReferences([{ slug: "refund-policy", title: "Refund Policy" }], []);
+    expect(result).toEqual([]);
+  });
+
+  it("preserves extra fields on the reference objects (works on decision-shaped objects too)", () => {
+    const result = filterGroundedPolicyReferences(
+      [{ slug: "refund-policy", title: "Refund Policy", decision: "approve" as const }],
+      retrieved,
+    );
+    expect(result).toEqual([{ slug: "refund-policy", title: "Refund Policy", decision: "approve" }]);
+  });
+
+  it("isPolicyGrounded is true only for a retrieved slug", () => {
+    expect(isPolicyGrounded("refund-policy", retrieved)).toBe(true);
+    expect(isPolicyGrounded("made-up-policy", retrieved)).toBe(false);
+    expect(isPolicyGrounded("refund-policy", [])).toBe(false);
   });
 });
