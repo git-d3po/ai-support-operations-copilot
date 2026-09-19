@@ -14,7 +14,7 @@ actually determinable:
 |---|---|
 | `password-reset` | Standard case, no escalation |
 | `duplicate-billing` | Billing + Policy fast-path resolution |
-| `prohibited-refund` | Policy correctly *denies* a refund outside policy conditions |
+| `prohibited-refund` | Policy correctly *denies* a refund of a usage-based (API overage) charge, which Refund Policy condition 3 makes non-refundable |
 | `legitimate-refund` | Policy correctly *approves* a refund within conditions |
 | `failed-payment` | Distinguishing "monitor" from "act" when the customer already self-served |
 | `known-technical-issue` | Technical Agent grounds in a specific known-issue doc |

@@ -138,7 +138,7 @@ export const SCENARIOS: ScenarioSeed[] = [
   },
   {
     key: "prohibited-refund",
-    description: "Refund requested well outside the 14-day window with clear evidence of prior usage.",
+    description: "Refund requested for metered API overage charges that the customer acknowledges were actually incurred.",
     customer: {
       name: "Dana Ruiz-Coleman",
       email: "dana@harborpointe.co",
@@ -148,14 +148,16 @@ export const SCENARIOS: ScenarioSeed[] = [
     },
     account: { plan: "enterprise", status: "active", mrrCents: 149900, riskScore: 20 },
     subscription: { status: "active", startedDaysAgo: 210, renewsInDays: 155 },
-    invoices: [{ status: "paid", amountCents: 1799000, issuedDaysAgo: 210, dueDaysAgo: 210, paidDaysAgo: 210 }],
-    transactions: [{ type: "charge", status: "succeeded", amountCents: 1799000, occurredDaysAgo: 210, invoiceIndex: 0 }],
-    ticket: { subject: "Requesting refund for our annual plan", channel: "email", priority: "medium" },
+    invoices: [{ status: "paid", amountCents: 245000, issuedDaysAgo: 21, dueDaysAgo: 21, paidDaysAgo: 21 }],
+    transactions: [
+      { type: "charge", status: "succeeded", amountCents: 245000, occurredDaysAgo: 21, reason: "api_overage", invoiceIndex: 0 },
+    ],
+    ticket: { subject: "Refund request for API overage charges", channel: "email", priority: "medium" },
     messages: [
       {
         author: "customer",
         authorName: "Dana Ruiz-Coleman",
-        body: "We signed up for the annual Enterprise plan back in the spring and have been using it daily since, but we've decided to move to a different tool. Can we get a refund for the remaining months?",
+        body: "Our latest invoice includes $2,450.00 of metered API overage charges. The extra API calls came from a batch job we ran ourselves, and the usage was real. We would like the overage charges refunded.",
         sentDaysAgo: 0,
       },
     ],
@@ -165,7 +167,8 @@ export const SCENARIOS: ScenarioSeed[] = [
       expectedPolicySlug: "refund-policy",
       expectedEscalation: false,
       expectedAction: "deny_request",
-      notes: "Charge occurred 210 days ago with acknowledged daily usage — well outside the 14-day, low-usage refund window.",
+      notes:
+        "Refund Policy condition 3 makes usage-based charges (API overages) non-refundable once the usage has occurred, and the customer acknowledges the usage occurred (their own batch job). The charge is 21 days old, so the 14-day refund condition, which covers subscription charges, does not compete. Because the request falls squarely under condition 3 it is not merely an 'outside these conditions' request, so the ambiguous catch-all / requires_review path does not determine the outcome. The charge is marked reason \"api_overage\" so the Billing and Policy agents see it as structured data.",
     },
   },
   {

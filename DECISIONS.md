@@ -1799,3 +1799,98 @@ requirement that nothing in the Response layer enforces, and is not addressed.
 **When we'd reconsider:** If the intent label proves an unreliable trigger, or
 the classifier is given the formal taxonomy, revisit what should trigger the
 invariant (and whether severity should be specified) as a separate decision.
+
+---
+
+## 2026-09-19 — Redesign `prohibited-refund` around Refund Policy condition 3 (API overage), removing a policy-compliant ambiguity (specification/data only)
+
+**Context:** `prohibited-refund` expected `deny_request` with no escalation for
+an annual-plan refund requested 210 days after the charge. The seeded Refund
+Policy does not require that outcome. It lists four conditions, then says that
+requests outside them "require Billing Ops approval and should be marked
+`requires_review` rather than auto-denied, unless the request is clearly outside
+condition 1 by more than 90 days, in which case it **may** be denied directly".
+At 210 days both outcomes are policy-compliant: `requires_review` is the stated
+default and direct denial is a permitted exception. The Escalation Policy also
+sends "refund requests outside the standard Refund Policy conditions" to Billing
+Ops with no exception clause. The scenario notes cited only condition 1 and
+never the 90-day exception, the pre-live evaluation table summarized the case as
+"denies a refund outside policy conditions", and a seeded background template
+("we're switching tools") is answered with a processed refund. The scorer grades
+a single `expectedAction`, so a policy-compliant `requires_review` would be
+scored as a failure.
+
+**What the read-only audit found:** (1) the seeded policy is the specification,
+and it permits both outcomes, so `deny_request` was one compliant outcome, not a
+requirement; (2) there is no implementation defect: the Policy agent receives
+the full policy text and the pre-computed days since the charge, its contract
+allows `approve`, `deny` and `requires_review`, `resolveOutcome()` maps
+`requires_review` to `escalate` (`billing_ops`, low), the Escalation Policy's own
+route, and `deny` to `deny_request`, and Policy is forced for `refund_request` by
+routing; (3) the single-outcome scoring cannot represent an alternative
+compliant outcome. The historical live result for the old scenario was noted as
+context only and was not treated as specification evidence.
+
+**Options considered:** (a) flip the expectation to `requires_review`, which only
+moves the ambiguity, since a compliant `deny` remains permitted at 210 days;
+(b) accept either outcome, which needs a scoring/schema change; (c) tighten the
+Refund Policy wording, a product-policy change; (d) redesign the scenario so
+exactly one outcome is compliant.
+
+**Decision made:** (d), using **condition 3**: "Usage-based charges (API overages,
+storage overages) are non-refundable once the usage has occurred, because the
+underlying resource was consumed." The scenario key and the expected outcome are
+unchanged: `refund_request`; agents billing + policy + response; policy
+`refund-policy`; no escalation; `deny_request`. Only the situation changed: a
+customer asks for a refund of metered API overage charges and acknowledges the
+usage was real (a batch job of their own). Facts: one paid invoice of $2,450.00
+and one succeeded charge for the same amount, both 21 days old, with the
+customer, account and subscription identity unchanged; ticket subject "Refund
+request for API overage charges", email, medium priority. The message contains no
+claim of a metering error, duplicate billing, unauthorized activity or other
+dispute.
+
+**Why condition 3 (and not condition 4, the mid-cycle downgrade):** Condition 3
+is flat and unconditional. The charge age is chosen so nothing competes: 21 days
+is past the 14-day condition (which covers subscription charges), and far under
+90 days, so the ambiguous catch-all exception does not decide the case. The
+request falls squarely under condition 3, so it is not merely "outside these
+conditions" and the `requires_review` default does not apply. Condition 4 could
+not be grounded in the data the agents see (no plan history, and the Policy agent
+is never shown subscription or plan data), so the deciding fact would rest on an
+unverifiable statement. It would also sit next to `legitimate-refund`, whose
+ticket already asks to drop back to Starter, and could be cross-read with
+condition 1. The seeded world supports usage charges: the `API-USAGE` product,
+the API-limits doc, two billing-question templates, and the policy's own wording.
+
+**Structured grounding:** The charge carries `reason: "api_overage"`. That field
+is already exposed to the Billing and Policy agents (transactions are printed with
+their reason), so the deciding fact is in structured data and not only in the
+customer's message. The schema comment says the field is "populated for
+refunds/failures", so using it to label a charge's kind extends that convention
+slightly; it is an existing optional fixture and database field, with no schema
+change.
+
+**Why specification/data only, and why this is not an implementation defect:**
+The old outcome was not produced by a defect. The pipeline handled both
+policy-compliant outcomes correctly, and the ambiguity lived in the scenario's
+expectation. So no production logic, `resolveOutcome()`, agent prompt, scorer,
+threshold, routing, or Refund Policy wording was changed. Only the scenario
+data, its notes, the deterministic dry-run fixture for this scenario, and one
+`EVALUATION.md` table row changed. Under the new scenario a `requires_review`
+would be a misapplication of condition 3 (model variance), not a compliant
+alternative; even so, a single such result would not by itself indicate a defect.
+
+**Not done / limits:** No live evaluation was run, and the databases were not
+reseeded. Earlier live results for this scenario used the old data and are not
+comparable to a run on the new one. The `requires_review` path (a request between
+14 and 90 days after the charge, outside every condition) still has no scenario;
+that is a separate follow-up. The classifier could still label the ticket
+`billing_question` instead of `refund_request`, though the request for a refund is
+explicit. The Policy agent computes days since the charge from the wall clock, so
+the printed value depends on the day of a run, but it stays well past 14 and
+under 90.
+
+**When we'd reconsider:** If live runs show the model systematically choosing
+`requires_review` for an acknowledged usage-based charge, investigate the Policy
+agent's handling of condition 3 as a separate finding.
