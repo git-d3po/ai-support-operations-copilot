@@ -1,0 +1,255 @@
+// AI Support Operations Copilot — data model
+// All data in this schema is synthetic and deterministically generated.
+// See prisma/seed.ts and ARCHITECTURE.md for the generation strategy.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Core SaaS domain (the fictional company's customers and business records)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  company   String
+  timezone  String
+  locale    String
+  createdAt DateTime @default(now())
+
+  account       Account?
+  tickets       Ticket[]
+
+  @@index([email])
+}
+
+model Account {
+  id            String   @id @default(cuid())
+  customerId    String   @unique
+  customer      Customer @relation(fields: [customerId], references: [id])
+  plan          String // e.g. "starter", "growth", "scale", "enterprise"
+  status        String // "active", "past_due", "canceled", "trialing"
+  mrrCents      Int
+  riskScore     Int // 0-100, deterministic synthetic risk indicator
+  createdAt     DateTime @default(now())
+
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  transactions  Transaction[]
+
+  @@index([customerId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  name        String
+  description String
+  category    String // "core", "add-on", "usage"
+  priceCents  Int
+  billingUnit String // "seat", "flat", "usage"
+
+  subscriptions SubscriptionItem[]
+}
+
+model Subscription {
+  id         String   @id @default(cuid())
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id])
+  status     String // "active", "trialing", "past_due", "canceled"
+  startedAt  DateTime
+  renewsAt   DateTime
+  canceledAt DateTime?
+
+  items    SubscriptionItem[]
+  invoices Invoice[]
+
+  @@index([accountId])
+}
+
+model SubscriptionItem {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id])
+  quantity       Int
+
+  @@index([subscriptionId])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  accountId      String
+  account        Account       @relation(fields: [accountId], references: [id])
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  number         String        @unique
+  status         String // "paid", "open", "past_due", "void", "refunded"
+  amountCents    Int
+  issuedAt       DateTime
+  dueAt          DateTime
+  paidAt         DateTime?
+
+  transactions Transaction[]
+
+  @@index([accountId])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+  type        String // "charge", "refund", "chargeback", "payout_failure"
+  status      String // "succeeded", "failed", "pending"
+  amountCents Int
+  reason      String? // populated for refunds/failures, e.g. "insufficient_funds"
+  occurredAt  DateTime
+
+  @@index([accountId])
+}
+
+// ---------------------------------------------------------------------------
+// Support domain
+// ---------------------------------------------------------------------------
+
+model Ticket {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  subject    String
+  channel    String // "email", "chat", "in_app"
+  status     String // "open", "pending", "escalated", "resolved", "closed"
+  priority   String // "low", "medium", "high", "urgent"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Curated demonstration tickets carry an evaluation scenario key and the
+  // expected outcome an evaluator can score AI behavior against. Ordinary
+  // synthetic tickets leave these null.
+  scenarioKey String? @unique
+
+  messages         Message[]
+  orchestrationRuns OrchestrationRun[]
+  evaluationCase   EvaluationCase?
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  author     String // "customer" | "agent" | "system"
+  authorName String
+  body       String
+  sentAt     DateTime
+
+  @@index([ticketId])
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge domain (what specialist agents ground their findings in)
+// ---------------------------------------------------------------------------
+
+model Policy {
+  id       String @id @default(cuid())
+  slug     String @unique
+  title    String
+  category String // "billing", "refunds", "security", "technical", "escalation"
+  body     String // markdown
+  version  String
+}
+
+model ProductDoc {
+  id       String @id @default(cuid())
+  slug     String @unique
+  title    String
+  product  String // relates to Product.category, e.g. "core"
+  body     String // markdown
+  version  String
+}
+
+// ---------------------------------------------------------------------------
+// AI orchestration domain (what the product actually shows in the UI)
+// ---------------------------------------------------------------------------
+
+// One OrchestrationRun = one "Run AI analysis" invocation on a ticket.
+model OrchestrationRun {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  status    String // "running", "completed", "failed"
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+
+  // Structured, top-level outputs (validated against Zod schemas at write time)
+  classification Json? // TicketClassification
+  resolution     Json? // ResolutionDecision
+  escalation     Json? // EscalationDecision | null
+  response       Json? // CustomerResponse
+
+  agentInvocations AgentInvocation[]
+
+  @@index([ticketId])
+}
+
+// One row per specialist agent the orchestrator decided to invoke for a run.
+model AgentInvocation {
+  id                 String           @id @default(cuid())
+  orchestrationRunId String
+  orchestrationRun   OrchestrationRun @relation(fields: [orchestrationRunId], references: [id])
+  agentKey           String // "billing" | "policy" | "technical" | "risk" | "response"
+  status             String // "succeeded", "failed", "skipped"
+  finding            Json? // AgentFinding
+  model              String // model id used for this invocation
+  inputTokens        Int?
+  outputTokens       Int?
+  latencyMs          Int?
+  estimatedCostUsd   Float?
+  errorMessage       String?
+  startedAt          DateTime         @default(now())
+  finishedAt         DateTime?
+
+  @@index([orchestrationRunId])
+}
+
+// ---------------------------------------------------------------------------
+// Evaluation domain
+// ---------------------------------------------------------------------------
+
+// Links a curated ticket to its expected outcome for scoring.
+model EvaluationCase {
+  id               String   @id @default(cuid())
+  ticketId         String   @unique
+  ticket           Ticket   @relation(fields: [ticketId], references: [id])
+  scenarioKey      String   @unique
+  description      String
+  expectedOutcome  Json // EvaluationExpectedOutcome
+  createdAt        DateTime @default(now())
+
+  results EvaluationResult[]
+}
+
+// One scored run of a curated case against a specific OrchestrationRun.
+model EvaluationResult {
+  id                 String         @id @default(cuid())
+  evaluationCaseId   String
+  evaluationCase     EvaluationCase @relation(fields: [evaluationCaseId], references: [id])
+  orchestrationRunId String
+  scores             Json // EvaluationResult (per-dimension scores + overall)
+  passed             Boolean
+  createdAt          DateTime       @default(now())
+
+  @@index([evaluationCaseId])
+}
