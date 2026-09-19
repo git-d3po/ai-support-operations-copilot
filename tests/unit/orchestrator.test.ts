@@ -177,6 +177,45 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
     expect(outcome.escalation).toBeNull();
   });
 
+  // A technical ticket must still reach Technical (and therefore its escalation
+  // rule) when the classifier returns no domains; otherwise resolution falls
+  // through to the "no specialist ran" default, reply_and_monitor.
+  it("technical issue still reaches Technical and escalates when the classifier returns no domains", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider({
+        ticket_classification: JSON.stringify({
+          intent: "technical_issue",
+          domains: [],
+          sentiment: "neutral",
+          confidence: 0.95,
+          summary: "Automations still not firing after the documented workaround.",
+          keyEvidence: ["automations are still not firing"],
+        }),
+        technical_agent_finding: JSON.stringify({
+          agentKey: "technical",
+          summary: "Known issue; the documented workaround was already tried and failed.",
+          evidence: ["Customer split the board as documented; automations still not firing"],
+          confidence: 0.85,
+          policyReferences: [],
+          flags: ["known_issue_workaround_already_tried", "requires_escalation"],
+        }),
+        response_agent_reply: JSON.stringify({ body: "We're escalating this to the right team.", tone: "neutral", nextSteps: [] }),
+      }),
+    );
+
+    const outcome = await runOrchestration({
+      ticketId: "test-ticket",
+      ticketSummary: "Automations still broken after splitting the board",
+      conversation: [{ author: "customer", body: "We split the board as described but automations still are not firing." }],
+      accountContext: makeAccountContext(),
+    });
+
+    expect(outcome.agentsInvoked).toEqual(["technical", "response"]);
+    expect(outcome.resolution.action).toBe("escalate");
+    expect(outcome.escalation?.targetTeam).toBe("engineering");
+  });
+
   it("never invokes every agent for a narrow ticket (dynamic selection still holds with real classification)", async () => {
     registerProvider(
       "anthropic",

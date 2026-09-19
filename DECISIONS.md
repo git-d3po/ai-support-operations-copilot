@@ -1629,3 +1629,82 @@ tier placement are not exercised by any curated scenario.
 an unreasonable primary intent, or if the classifier prompt is later changed
 to convey it, revisit the tiers, the fallback designation and the tie-break
 together and re-baseline.
+
+---
+
+## 2026-09-19 — Deterministic Technical coverage for `technical_issue`
+
+**Context:** A read-only audit of the routing contracts found a gap in
+`selectAgents()` that follows from artifacts that predate any live testing.
+The product spec gives the Technical Agent the job of diagnosing "technical
+issues against product documentation and known-issue records"; the technical
+rules in `resolveOutcome()` (escalate on a failed workaround, auto-resolve a
+standard flow, reply on a known-issue workaround) can only act on a Technical
+finding; the intent taxonomy in `EVALUATION.md` defines `technical_issue` as a
+product malfunction, performance or integration problem; and both technical
+curated scenarios expect Technical to run. Yet `selectAgents()` had no rule for
+this intent: Technical ran only if the classifier happened to list `technical`
+in `domains`, an optional field its prompt allows to be empty. Every existing
+`technical_issue` routing test supplied `domains: ["technical"]` itself, which
+hid the dependency. Run through the real code, `technical_issue` with no
+domains selects only `response`, and `resolveOutcome()` then falls to its "no
+specialist agents ran" rule (`reply_and_monitor`), so a technical ticket,
+including one whose documented workaround already failed, could never reach the
+rules written for it.
+
+**Options considered:** (a) ask the classifier, in its prompt, to always list
+`technical` for technical issues; (b) add a deterministic `technical_issue` →
+Technical rule in `selectAgents()`; (c) change the scenarios or expectations.
+
+**Decision made:** (b). `selectAgents()` now always includes `technical` for
+`technical_issue`, in the same way as the existing intent overrides. Nothing
+else changed: agents remain unique (a `Set`), in the stable `AGENT_KEYS` order,
+with `response` last, and no other specialist is added by this rule. An
+exhaustive differential comparison of the committed and new function over every
+intent × domain subset × sentiment (640 combinations) showed exactly 32 results
+changed, all `technical_issue` cases whose domains lacked `technical`; each
+gained only `technical`; nothing was removed, duplicated, reordered or moved
+ahead of `response`.
+
+**Rationale:** Which specialist a technical issue needs is a property of the
+intent, not something the model should have to volunteer through an optional
+field; leaving it to the classifier made required coverage model-dependent.
+This is an orchestration invariant, not a classifier correction: a classifier
+returning `domains: []` for a technical issue is valid output and is left as
+is. (a) would only ask the model to be more consistent, whereas a rule in code
+cannot vary; (c) is rejected because the scenarios are consistent with the
+specification and the defect is in routing.
+
+**Tests:** New cases in `tests/unit/selectAgents.test.ts` cover `domains: []`
+and `["technical"]` (no duplicate), unchanged domain-based Technical routing
+for other intents, no Policy/Billing/Risk added by this rule, stable order with
+extra domains and the sentiment override, `response` last, and the existing
+`duplicate_charge`, `refund_request`, `password_reset`, `cancellation` and
+`failed_payment` routing pinned at their existing inputs. An orchestrator-level
+test drives a `technical_issue` classification with no domains to Technical and
+an engineering escalation. One earlier test comment that called `technical_issue`
+"still dependent on the classifier's domains" was updated so it stays true. No
+live evaluation was run.
+
+**No live result is used to justify the rule.** Its basis is the pre-live
+product spec, the pre-live resolution rules, the taxonomy and the scenario
+expectations. The gap was first noted as an open item in the earlier
+`password_reset` decision and then confirmed by a read-only audit; those
+observations prompted this change but are not its justification.
+
+**Not changed:** No scenario, evaluation expectation, fixture, classifier
+prompt, agent prompt, schema, `resolveOutcome()`, scoring, threshold, model
+routing or token budget was changed, nor `failed_payment`, `account_security`
+or refund routing. This rule does not make the Risk agent run for
+`technical-escalation`: that still depends on the classifier's sentiment or
+domains. The primary specialist for `failed_payment`, and a policy-mandated
+escalation for `account_security`, are separate decisions.
+
+**Tradeoffs:** Technical now runs for every `technical_issue` ticket, including
+any the classifier judged to need no specialist, at some added cost; a technical
+ticket warrants diagnosis by definition. The rule keys on the classified intent,
+so a ticket mislabeled with a different intent is not covered.
+
+**When we'd reconsider:** If more intents gain deterministic coverage, move the
+intent → specialist mapping into a single explicit table instead of a growing
+chain of conditions.

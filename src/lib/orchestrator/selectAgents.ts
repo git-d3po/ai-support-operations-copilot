@@ -55,6 +55,17 @@ export function selectAgents(
   if (classification.intent === "password_reset") {
     selected.add("technical");
   }
+  // A technical issue is exactly what the Technical Agent exists to diagnose
+  // (product spec: "Diagnoses technical issues against product documentation
+  // and known-issue records"), and resolveOutcome()'s technical rules can only
+  // act on a Technical finding — without it a technical ticket falls through
+  // to the "no specialist ran" default. `domains` is an optional classifier
+  // field, so this coverage must not depend on it. An orchestration
+  // invariant, not a classifier correction. See DECISIONS.md ("Deterministic
+  // Technical coverage for technical_issue").
+  if (classification.intent === "technical_issue") {
+    selected.add("technical");
+  }
   if (classification.sentiment === "angry" || classification.sentiment === "urgent") {
     selected.add("risk");
   }

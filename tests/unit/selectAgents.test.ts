@@ -201,8 +201,8 @@ describe("selectAgents: deterministic Technical coverage for password_reset", ()
   });
 
   it("does not leak technical into other intents that carry no technical domain", () => {
-    // technical_issue is deliberately not asserted here: like password_reset it
-    // still depends on the classifier's domains (an open item, see DECISIONS.md).
+    // technical_issue is excluded on purpose: it now deliberately routes to
+    // technical (see "deterministic Technical coverage for technical_issue" below).
     const intents = [
       "duplicate_charge",
       "refund_request",
@@ -216,5 +216,77 @@ describe("selectAgents: deterministic Technical coverage for password_reset", ()
     for (const intent of intents) {
       expect(selectAgents(classification({ intent, domains: [] }))).not.toContain("technical");
     }
+  });
+});
+
+// Technical coverage for technical_issue must not depend on the classifier
+// volunteering "technical": `domains` is an optional field its prompt allows to
+// be empty, and resolveOutcome()'s technical rules can only act on a Technical
+// finding. Every earlier technical_issue test supplied domains ["technical"]
+// itself, which is why the dependency was invisible.
+describe("selectAgents: deterministic Technical coverage for technical_issue", () => {
+  it("includes technical, then response, even when the classifier returns no domains", () => {
+    const result = selectAgents(classification({ intent: "technical_issue", domains: [] }));
+    expect(result).toEqual(["technical", "response"]);
+    expect(result).toEqual(
+      SCENARIOS.find((s) => s.key === "known-technical-issue")!.expectedOutcome.expectedAgents,
+    );
+  });
+
+  it("does not duplicate technical when the classifier already lists it", () => {
+    const result = selectAgents(classification({ intent: "technical_issue", domains: ["technical"] }));
+    expect(result).toEqual(["technical", "response"]);
+    expect(result.filter((key) => key === "technical")).toHaveLength(1);
+  });
+
+  it("keeps domain-based Technical routing for other intents intact", () => {
+    expect(selectAgents(classification({ intent: "general_inquiry", domains: ["technical"] }))).toEqual([
+      "technical",
+      "response",
+    ]);
+    expect(
+      selectAgents(classification({ intent: "billing_question", domains: ["billing", "technical"] })),
+    ).toEqual(["billing", "technical", "response"]);
+  });
+
+  it("does not add policy, billing, or risk to a technical issue on its own", () => {
+    const result = selectAgents(classification({ intent: "technical_issue", domains: [] }));
+    for (const key of ["policy", "billing", "risk"] as const) {
+      expect(result).not.toContain(key);
+    }
+  });
+
+  it("keeps the stable order and still honors extra classifier domains and the sentiment override", () => {
+    expect(selectAgents(classification({ intent: "technical_issue", domains: ["billing"] }))).toEqual([
+      "billing",
+      "technical",
+      "response",
+    ]);
+    expect(selectAgents(classification({ intent: "technical_issue", domains: ["risk"] }))).toEqual([
+      "technical",
+      "risk",
+      "response",
+    ]);
+    const urgent = selectAgents(classification({ intent: "technical_issue", domains: [], sentiment: "urgent" }));
+    expect(urgent).toEqual(["technical", "risk", "response"]);
+    expect(urgent).toEqual(
+      SCENARIOS.find((s) => s.key === "technical-escalation")!.expectedOutcome.expectedAgents,
+    );
+  });
+
+  it("always ends with response", () => {
+    expect(selectAgents(classification({ intent: "technical_issue", domains: [] })).at(-1)).toBe("response");
+  });
+
+  // The other routing contracts, pinned at their existing inputs, so this rule
+  // cannot quietly disturb them.
+  it.each([
+    ["duplicate_charge", ["billing"], ["billing", "policy", "response"]],
+    ["refund_request", ["billing"], ["billing", "policy", "response"]],
+    ["password_reset", [], ["technical", "response"]],
+    ["cancellation", [], ["policy", "risk", "response"]],
+    ["failed_payment", ["billing"], ["billing", "response"]],
+  ] as const)("%s routing is unchanged", (intent, domains, expected) => {
+    expect(selectAgents(classification({ intent, domains: [...domains] }))).toEqual([...expected]);
   });
 });
