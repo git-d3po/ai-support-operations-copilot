@@ -140,3 +140,81 @@ describe("selectAgents", () => {
     expect(result).toEqual(["billing", "policy", "technical", "response"]);
   });
 });
+
+// Regression for the first live evaluation of the corrected password-reset
+// scenario: the real classifier returned intent "password_reset" with
+// domains [] (the prompt allows an empty list), so Technical never ran and
+// resolution fell through to reply_and_monitor. The existing password-reset
+// tests above all supplied domains ["technical"], which is why it went
+// unnoticed. Technical coverage for this intent must not depend on the model.
+describe("selectAgents: deterministic Technical coverage for password_reset", () => {
+  it("includes technical, then response, even when the classifier returns no domains", () => {
+    const result = selectAgents(classification({ intent: "password_reset", domains: [] }));
+    expect(result).toEqual(["technical", "response"]);
+    expect(result).toEqual(
+      SCENARIOS.find((s) => s.key === "password-reset")!.expectedOutcome.expectedAgents,
+    );
+  });
+
+  it("does not duplicate technical when the classifier also lists it", () => {
+    const result = selectAgents(classification({ intent: "password_reset", domains: ["technical"] }));
+    expect(result).toEqual(["technical", "response"]);
+    expect(result.filter((key) => key === "technical")).toHaveLength(1);
+  });
+
+  it("does not add policy, billing, or risk to a routine password reset", () => {
+    const result = selectAgents(classification({ intent: "password_reset", domains: [] }));
+    for (const key of ["policy", "billing", "risk"] as const) {
+      expect(result).not.toContain(key);
+    }
+  });
+
+  it("keeps the stable order and still honors extra classifier domains and the sentiment override", () => {
+    expect(selectAgents(classification({ intent: "password_reset", domains: ["billing"] }))).toEqual([
+      "billing",
+      "technical",
+      "response",
+    ]);
+    expect(selectAgents(classification({ intent: "password_reset", domains: ["risk"] }))).toEqual([
+      "technical",
+      "risk",
+      "response",
+    ]);
+    expect(
+      selectAgents(classification({ intent: "password_reset", domains: [], sentiment: "urgent" })),
+    ).toEqual(["technical", "risk", "response"]);
+  });
+
+  it("always ends with response", () => {
+    expect(selectAgents(classification({ intent: "password_reset", domains: [] })).at(-1)).toBe("response");
+  });
+
+  // The existing critical routing contracts, restated at the same inputs the
+  // rest of this file already uses, so this change can't quietly disturb them.
+  it.each([
+    ["duplicate_charge", ["billing"], ["billing", "policy", "response"]],
+    ["refund_request", ["billing"], ["billing", "policy", "response"]],
+    ["cancellation", [], ["policy", "risk", "response"]],
+    ["failed_payment", ["billing"], ["billing", "response"]],
+  ] as const)("%s routing is unchanged", (intent, domains, expected) => {
+    expect(selectAgents(classification({ intent, domains: [...domains] }))).toEqual([...expected]);
+  });
+
+  it("does not leak technical into other intents that carry no technical domain", () => {
+    // technical_issue is deliberately not asserted here: like password_reset it
+    // still depends on the classifier's domains (an open item, see DECISIONS.md).
+    const intents = [
+      "duplicate_charge",
+      "refund_request",
+      "failed_payment",
+      "billing_question",
+      "account_security",
+      "cancellation",
+      "feature_question",
+      "general_inquiry",
+    ] as const;
+    for (const intent of intents) {
+      expect(selectAgents(classification({ intent, domains: [] }))).not.toContain("technical");
+    }
+  });
+});

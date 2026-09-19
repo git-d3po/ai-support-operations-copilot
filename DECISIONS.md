@@ -1449,3 +1449,70 @@ given the account's risk data.
 **When we'd reconsider:** If the routine scenario proves flaky against a live
 model even with a grounded, routine ticket, that is a finding about the
 `auto_resolvable` prompt contract, to be handled as its own decision.
+
+---
+
+## 2026-09-19 — Deterministic Technical coverage for `password_reset`
+
+**Context:** The first live evaluation of the corrected `password-reset`
+scenario (a plain "I forgot my password and can't log in" ticket) scored 0.57
+and failed. The real classifier returned `intent: password_reset` but
+`domains: []`. `selectAgents()` starts from the classifier's `domains` and
+adds specialists only through explicit intent overrides, and there was none
+for `password_reset`, so the Technical Agent never ran. `resolveOutcome()`
+then hit its "no specialist agents ran" rule and produced `reply_and_monitor`
+("requesting clarification") for a clear, routine request, where the design
+expects `auto_resolve`. The classifier's output was permissible: its prompt
+explicitly allows an empty `domains` list. The deterministic tests and the
+dry-run fixture all supplied `domains: ["technical"]` for this intent, so the
+dependency was invisible until a live model answered — the same class of gap
+as the `duplicate_charge` finding.
+
+**Options considered:** (a) instruct the classifier, in its prompt, to always
+list `technical` for password resets; (b) add a deterministic
+`password_reset` → Technical rule in `selectAgents()`; (c) change the
+scenario or its expectation.
+
+**Decision made:** (b). `selectAgents()` now always includes `technical` for
+`password_reset`, exactly like the existing `duplicate_charge`, `refund_request`
+and `cancellation` overrides. The classifier, its prompt, the scenario, the
+fixtures, scoring and model routing are unchanged. Selection is still a
+`Set` filtered through `AGENT_KEYS`, so agents stay unique and in the stable
+order, and `response` still runs last. A differential check of the old and new
+function over every intent × domain subset × sentiment (640 combinations)
+showed exactly 32 results changed — all `password_reset` without a `technical`
+domain — and each gained only `technical`; nothing was removed.
+
+**Rationale:** Which specialist a routine password reset needs is a property
+of the intent, not something the model should have to volunteer through an
+optional field. Leaving it to the classifier made required coverage
+model-dependent: it worked when the model happened to list `technical` and
+silently degraded to a wrong default when it didn't. (a) would only ask the
+model to be more consistent; a rule in code cannot vary. This is an
+orchestration contract, not a correction of the classifier — a classifier
+returning `domains: []` here is valid output and is left as is. (c) is
+rejected: the scenario is valid, and the failure occurred before any step
+that could test its expectation.
+
+**Tests:** New cases in `tests/unit/selectAgents.test.ts` cover `domains: []`
+and `["technical"]` (no duplicate), no Policy/Billing/Risk added, stable order
+with extra domains and the sentiment override, `response` last, and the
+existing `duplicate_charge`, `refund_request`, `cancellation` and
+`failed_payment` routing as pinned at their existing inputs. An
+orchestrator-level test drives a `domains: []` classification through to
+`auto_resolve`. These prove routing and resolution, not live model behavior:
+the corrected scenario has not yet been re-run against a live model, so
+whether the Technical Agent then produces `auto_resolvable` (and respects its
+summary limit) on this ticket is still unmeasured.
+
+**Tradeoffs / still open:** Only `password_reset` was changed. Other intents
+still depend on the classifier's `domains` for their primary specialist —
+notably `technical_issue` (Technical), `failed_payment` and `billing_question`
+(Billing) — and the same failure mode is possible there. They were not changed
+without live evidence; the live evaluation reported `technical_issue`
+classified with `["technical"]` each time so far. That is a candidate for a
+follow-up audit, not part of this decision.
+
+**When we'd reconsider:** If live runs show another intent losing its primary
+specialist to an empty or partial `domains` list, apply the same deterministic
+pattern, or move the intent → specialist mapping into a single explicit table.

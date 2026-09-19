@@ -137,6 +137,46 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
     expect(outcome.response?.body).toBe("ok");
   });
 
+  // Regression for the first live evaluation of the corrected password-reset
+  // scenario: the real classifier returned domains [] for a plain
+  // forgotten-password ticket, so Technical never ran and the run resolved as
+  // reply_and_monitor ("no specialist ran") instead of auto_resolve.
+  it("password reset still reaches Technical and auto_resolve when the classifier returns no domains", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider({
+        ticket_classification: JSON.stringify({
+          intent: "password_reset",
+          domains: [],
+          sentiment: "neutral",
+          confidence: 0.99,
+          summary: "Customer forgot their password.",
+          keyEvidence: ["Forgot my password"],
+        }),
+        technical_agent_finding: JSON.stringify({
+          agentKey: "technical",
+          summary: "Routine password reset; the standard self-service flow applies.",
+          evidence: ["Customer reports only a forgotten password"],
+          confidence: 0.9,
+          policyReferences: [],
+          flags: ["auto_resolvable"],
+        }),
+        response_agent_reply: JSON.stringify({ body: "You can reset it from the sign-in page.", tone: "neutral", nextSteps: [] }),
+      }),
+    );
+
+    const outcome = await runOrchestration({
+      ticketId: "test-ticket",
+      ticketSummary: "Forgot my password — can't log in",
+      conversation: [{ author: "customer", body: "I forgot my password and can't log in. Can you help me reset it?" }],
+      accountContext: makeAccountContext(),
+    });
+
+    expect(outcome.agentsInvoked).toEqual(["technical", "response"]);
+    expect(outcome.resolution.action).toBe("auto_resolve");
+    expect(outcome.escalation).toBeNull();
+  });
+
   it("never invokes every agent for a narrow ticket (dynamic selection still holds with real classification)", async () => {
     registerProvider(
       "anthropic",

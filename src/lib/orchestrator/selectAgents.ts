@@ -44,6 +44,17 @@ export function selectAgents(
     selected.add("billing");
     selected.add("policy");
   }
+  // A routine password reset is handled by the Technical Agent (its
+  // `auto_resolvable` example), but `domains` is an optional classifier field
+  // the prompt allows to be empty — and a live classifier did return [] for a
+  // plain forgotten-password ticket, so Technical never ran and resolution
+  // fell through to the "no specialist ran" default. Required coverage must
+  // not depend on the model volunteering a domain. This is an orchestration
+  // rule, not a classifier correction. See DECISIONS.md ("Deterministic
+  // Technical coverage for password_reset").
+  if (classification.intent === "password_reset") {
+    selected.add("technical");
+  }
   if (classification.sentiment === "angry" || classification.sentiment === "urgent") {
     selected.add("risk");
   }
