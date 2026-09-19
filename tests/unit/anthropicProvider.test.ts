@@ -61,6 +61,22 @@ describe("AnthropicProvider", () => {
     );
   });
 
+  it("sends an explicit max_tokens budget, and lets a caller override it", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    createMock.mockResolvedValue({ content: [], usage: { input_tokens: 1, output_tokens: 1 } });
+
+    const { AnthropicProvider } = await import("@/lib/ai/providers/anthropic");
+    const { DEFAULT_MAX_OUTPUT_TOKENS } = await import("@/lib/ai/providers/types");
+    const provider = new AnthropicProvider();
+
+    await provider.complete({ model: "claude-sonnet-5", messages: [] });
+    expect(createMock).toHaveBeenLastCalledWith(expect.objectContaining({ max_tokens: DEFAULT_MAX_OUTPUT_TOKENS }));
+    expect(DEFAULT_MAX_OUTPUT_TOKENS).toBe(2048);
+
+    await provider.complete({ model: "claude-sonnet-5", messages: [], maxTokens: 300 });
+    expect(createMock).toHaveBeenLastCalledWith(expect.objectContaining({ max_tokens: 300 }));
+  });
+
   it("ignores non-text content blocks when assembling the response text", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key";
     createMock.mockResolvedValue({

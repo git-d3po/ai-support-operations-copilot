@@ -38,4 +38,25 @@ describe("runEvaluationSuite (real orchestrator, no live provider configured)", 
     const resultCount = await db.evaluationResult.count();
     expect(resultCount).toBe(0);
   });
+
+  it("with a scenarioKey, runs exactly that one scenario through the same analyzeTicket() path", async () => {
+    expect(process.env.ANTHROPIC_API_KEY).toBeFalsy();
+
+    const summaries = await runEvaluationSuite({ scenarioKey: "duplicate-billing" });
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].scenarioKey).toBe("duplicate-billing");
+    // Reaching the provider (and failing on the missing key) proves the
+    // single-scenario path goes through the real pipeline, not a shortcut.
+    expect(summaries[0].ok).toBe(false);
+    expect(summaries[0].error).toContain("ANTHROPIC_API_KEY");
+  });
+
+  it("rejects an unknown scenarioKey clearly, before any pipeline run or persisted row", async () => {
+    await expect(runEvaluationSuite({ scenarioKey: "not-a-scenario" })).rejects.toThrow(
+      /Unknown evaluation scenario "not-a-scenario"\. Valid scenarios: .*duplicate-billing/,
+    );
+    expect(await db.orchestrationRun.count()).toBe(0);
+    expect(await db.evaluationResult.count()).toBe(0);
+  });
 });

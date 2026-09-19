@@ -14,6 +14,8 @@
     "test:e2e": "playwright test",
     "eval": "tsx scripts/runEvaluation.ts",
     "eval:dry-run": "tsx scripts/runEvaluationDryRun.ts",
+    "db:eval:setup": "DATABASE_URL=file:./eval.db prisma migrate deploy && DATABASE_URL=file:./eval.db tsx prisma/seed.ts",
+    "dev:eval": "DATABASE_URL=file:./eval.db next dev",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset",

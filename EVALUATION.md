@@ -154,12 +154,20 @@ pricing table, without making any live call:
 ## Running the suite for real
 
 ```bash
-npm run eval
+npm run db:eval:setup            # once: create + seed the separate eval.db (re-running resets it)
+npm run eval -- duplicate-billing   # exactly one scenario (recommended first live call)
+npm run eval                     # all 10 scenarios
+npm run dev:eval                 # view the results (dev server on eval.db)
 ```
+
+Live results are written to `eval.db` (override with `EVAL_DATABASE_URL`),
+not `dev.db`, so `npm run test:e2e`'s reseed can't destroy them — see
+DECISIONS.md, "Live evaluation runs against a separate database".
+An unknown scenario name fails immediately, listing the valid ones.
 
 Requires `ANTHROPIC_API_KEY` in `.env` — the script checks for it and
 refuses to run otherwise, rather than silently falling back to anything
-else. When run, for each of the 10 `EvaluationCase` rows it:
+else. When run, for each selected `EvaluationCase` it:
 
 1. Calls `analyzeTicket(ticketId)` — the exact same function "Run AI
    analysis" uses — against the real configured provider.

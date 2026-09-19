@@ -42,8 +42,23 @@ export interface EvaluationCaseRunSummary {
  * ANTHROPIC_API_KEY configured and no fixture registered either), that
  * case is recorded as failed-to-run, not scored.
  */
-export async function runEvaluationSuite(): Promise<EvaluationCaseRunSummary[]> {
-  const cases = await db.evaluationCase.findMany({ orderBy: { scenarioKey: "asc" } });
+export async function runEvaluationSuite(
+  opts: { scenarioKey?: string } = {},
+): Promise<EvaluationCaseRunSummary[]> {
+  const allCases = await db.evaluationCase.findMany({ orderBy: { scenarioKey: "asc" } });
+
+  // Optional single-scenario filter (`npm run eval -- <scenarioKey>`). Same
+  // loop and same analyzeTicket() below — only the case list narrows. An
+  // unknown key throws before any model call is made.
+  const cases = opts.scenarioKey
+    ? allCases.filter((c) => c.scenarioKey === opts.scenarioKey)
+    : allCases;
+  if (opts.scenarioKey && cases.length === 0) {
+    throw new Error(
+      `Unknown evaluation scenario "${opts.scenarioKey}". Valid scenarios: ${allCases.map((c) => c.scenarioKey).join(", ")}.`,
+    );
+  }
+
   const summaries: EvaluationCaseRunSummary[] = [];
 
   for (const evalCase of cases) {

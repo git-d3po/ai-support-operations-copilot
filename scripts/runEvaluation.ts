@@ -9,9 +9,34 @@
  * project's evaluation design explicitly avoids. See EVALUATION.md.
  */
 import "dotenv/config";
-import { runEvaluationSuite } from "../src/lib/evaluation/runEvaluation";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+/**
+ * Live evaluation results go to their OWN database (`eval.db` by default),
+ * never the dev/e2e database (`dev.db`), because `npm run test:e2e` reseeds
+ * `dev.db` and would destroy them. Override with EVAL_DATABASE_URL. Create
+ * it with `npm run db:eval:setup`; view it with `npm run dev:eval`. See
+ * DECISIONS.md ("Live evaluation runs against a separate database").
+ */
+const EVAL_DATABASE_URL = process.env.EVAL_DATABASE_URL ?? "file:./eval.db";
 
 async function main() {
+  // Must happen before anything imports src/lib/db.ts (which reads
+  // DATABASE_URL at import time) — hence the dynamic import below.
+  process.env.DATABASE_URL = EVAL_DATABASE_URL;
+
+  if (EVAL_DATABASE_URL.startsWith("file:")) {
+    const file = path.resolve(EVAL_DATABASE_URL.slice("file:".length));
+    if (!existsSync(file)) {
+      console.error(
+        `Evaluation database not found at ${file}. Create and seed it first with: npm run db:eval:setup`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error(
       "ANTHROPIC_API_KEY is not set. The evaluation suite makes real model calls through the " +
@@ -21,8 +46,16 @@ async function main() {
     return;
   }
 
-  console.log("Running the evaluation suite against the live provider configured in modelRouting.ts...\n");
-  const summaries = await runEvaluationSuite();
+  // Optional: `npm run eval -- <scenarioKey>` runs exactly one scenario
+  // (through the same analyzeTicket() path); no argument runs all of them.
+  const scenarioKey = process.argv[2];
+  const { runEvaluationSuite } = await import("../src/lib/evaluation/runEvaluation");
+
+  console.log(`Evaluation database: ${EVAL_DATABASE_URL}`);
+  console.log(
+    `Running ${scenarioKey ? `scenario "${scenarioKey}"` : "the evaluation suite"} against the live provider configured in modelRouting.ts...\n`,
+  );
+  const summaries = await runEvaluationSuite({ scenarioKey });
 
   let passCount = 0;
   let failCount = 0;
@@ -45,6 +78,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

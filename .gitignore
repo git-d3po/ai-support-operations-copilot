@@ -47,6 +47,11 @@ next-env.d.ts
 /dev.db
 /dev.db-journal
 
+# live-evaluation database (see DECISIONS.md, "Live evaluation runs against a
+# separate database") — holds real model results, never committed
+/eval.db
+/eval.db-journal
+
 # playwright
 /test-results/
 /playwright-report/

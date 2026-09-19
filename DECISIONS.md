@@ -1108,3 +1108,104 @@ doesn't have a fixture for.
 (harness validation); it should never be pointed at real evaluation
 scoring or presented as measuring model quality. If that boundary starts
 to blur in practice, the fix is clearer labeling, not removing the tool.
+
+---
+
+## 2026-09-19 — Explicit output-token budget (`DEFAULT_MAX_OUTPUT_TOKENS = 2048`)
+
+**Context:** The baseline audit before the first live run found that no
+pipeline step sets `maxTokens`, so `anthropic.ts` silently fell back to a
+hardcoded `1024` for every call. Every step must return one complete JSON
+object; a response cut off by the token limit is invalid JSON, which
+`callWithStructuredRetry` retries (same limit, same truncation) and then
+degrades into an honest fallback — a live run would look like "the model
+failed" when the real cause was our ceiling.
+
+**Options considered:** (a) keep 1024; (b) per-agent budgets in
+`modelRouting.ts`; (c) one explicit constant for all steps.
+
+**Decision made:** (c) — `DEFAULT_MAX_OUTPUT_TOKENS = 2048` in
+`src/lib/ai/providers/types.ts`, used by `anthropic.ts` when a request
+doesn't set `maxTokens` (a caller still can). Unit-tested in
+`anthropicProvider.test.ts`.
+
+**Rationale:** Sized from `schemas.ts`'s field caps, not guessed. The
+largest artifacts are the Policy finding (400-char summary, up to 8 evidence
+items, up to 5 citations, a 400-char justification, uncapped
+conditionsMet/Unmet lists) and the Response (body up to 3000 chars plus
+next steps) — roughly 1,000 tokens worst case, i.e. right at the old limit.
+2048 is ~2x that: comfortable headroom, while a response that still hits it
+signals a genuinely runaway output rather than normal variation. It is a
+ceiling, not a spend — only generated tokens are billed, so the pre-flight
+cost estimate in EVALUATION.md is unaffected. Per-agent budgets (b) would
+add config for a difference no step needs.
+
+**Tradeoffs:** A single value is slightly generous for the classifier and
+Billing (small outputs). Truncation is still only detected indirectly (as a
+parse failure); surfacing the SDK's `stop_reason` is a possible later
+improvement, not needed for the first smoke test.
+
+**When we'd reconsider:** If the smoke test/eval shows real outputs
+approaching the limit, or a schema's caps are raised.
+
+---
+
+## 2026-09-19 — Live evaluation runs against a separate database (`eval.db`)
+
+**Context:** `playwright.config.ts` runs `npm run db:seed` — a full reset —
+against `dev.db` before every e2e server boot, and integration tests use
+`dev.db` too. A live evaluation stored there would be destroyed by the next
+`npm run test:e2e` (the audit observed exactly this: the earlier dry-run
+results were already gone).
+
+**Options considered:** (a) leave it and tell people to export results
+first; (b) change e2e/integration to use their own DB (touches the tested
+workflow); (c) leave dev/e2e on `dev.db` untouched and give the live
+evaluation its own SQLite file.
+
+**Decision made:** (c). The database was already selected by `DATABASE_URL`
+(`src/lib/databaseUrl.ts`); nothing in Prisma or the app changed.
+- `npm run eval` sets `DATABASE_URL` to `EVAL_DATABASE_URL` (default
+  `file:./eval.db`) before `db.ts` loads (dynamic import in
+  `scripts/runEvaluation.ts`), prints which database it is using, and
+  refuses with a clear message if the file doesn't exist yet.
+- `npm run db:eval:setup` creates and seeds `eval.db` (`prisma migrate
+  deploy` + seed, both pointed at it). It is also the reset: re-running it
+  wipes prior live results, which is why it is a separate, explicit command.
+- `npm run dev:eval` runs the dev server against `eval.db` to view the
+  results on the Evaluations/Ticket pages.
+- `/eval.db` (+ journal) is gitignored.
+`eval:dry-run`, `db:seed`, `test:e2e`, `test:integration` and `dev` are
+unchanged and still use `dev.db`.
+
+**Rationale:** Smallest change that makes the separation structural: a
+different file, chosen in one place, visible in the eval script's output.
+The existing e2e/dev behavior is preserved exactly (verified: 9/9 e2e).
+
+**Tradeoffs:** Live results don't appear on a plain `npm run dev` (that
+shows `dev.db`) — use `npm run dev:eval`. The npm scripts use inline
+`VAR=value` syntax, so they're POSIX-shell only (fine for macOS/Linux; would
+need `cross-env` on Windows). Nothing prevents someone from setting
+`EVAL_DATABASE_URL=file:./dev.db`; that's an explicit override, not an
+accident.
+
+**When we'd reconsider:** If a hosted/shared deployment ever needs real
+result storage — that's a different database decision (see "Database:
+SQLite + Prisma 7").
+
+---
+
+## 2026-09-19 — Single-scenario evaluation filter (`npm run eval -- <scenarioKey>`)
+
+**Context:** `npm run eval` always ran all 10 scenarios, so a first live
+call couldn't be limited to one.
+
+**Decision made:** `runEvaluationSuite({ scenarioKey? })` in
+`src/lib/evaluation/runEvaluation.ts` narrows the case list; the loop,
+`analyzeTicket()`, scoring and persistence are the same code as the full
+run. An unknown key throws — before any model call or persisted row — with
+the list of valid keys. `npm run eval -- duplicate-billing` and
+`npm run eval:dry-run -- duplicate-billing` both use it; no argument runs
+all 10 as before. Covered by two integration tests (one scenario runs via
+the real pipeline; unknown key rejected, nothing persisted). Scoring and
+routing are untouched.

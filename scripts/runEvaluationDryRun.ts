@@ -55,7 +55,8 @@ async function main() {
   _resetProvidersForTests();
   registerProvider("anthropic", new MockProvider(respond));
 
-  const summaries = await runEvaluationSuite();
+  // Optional: `npm run eval:dry-run -- <scenarioKey>` runs just that scenario.
+  const summaries = await runEvaluationSuite({ scenarioKey: process.argv[2] });
 
   let passCount = 0;
   let failCount = 0;

@@ -1,5 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { CompletionRequest, CompletionResult, ModelProvider } from "./types";
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  type CompletionRequest,
+  type CompletionResult,
+  type ModelProvider,
+} from "./types";
 
 /**
  * The only file in the codebase allowed to import `@anthropic-ai/sdk`.
@@ -27,7 +32,7 @@ export class AnthropicProvider implements ModelProvider {
     const response = await this.client.messages.create({
       model: request.model,
       system: request.system,
-      max_tokens: request.maxTokens ?? 1024,
+      max_tokens: request.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       messages: request.messages.map((message) => ({
         role: message.role,
         content: message.content,
