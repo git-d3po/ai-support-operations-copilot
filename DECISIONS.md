@@ -1296,3 +1296,74 @@ live run should show whether it matters.
 **When we'd reconsider:** If live runs show the heuristic missing real
 promises or over-flagging legitimate replies, or if other intents that lead
 to money movement appear.
+
+---
+
+## 2026-09-19 — Tell the Technical Agent its summary limit; keep the 400-character schema cap
+
+**Context:** The first full live evaluation (10 scenarios, real Anthropic
+models) exposed a robustness bug. `AgentFindingSchema.summary` is capped at
+400 characters, but the Technical Agent's prompt never told the model that
+limit. In two of five Technical calls (`password-reset` and `multi-domain`)
+the model wrote a longer summary on both attempts, so validation failed with
+`summary: Too big: expected string to have <=400 characters`, the retry hit
+the same error, and the step degraded to an `agent_failed` fallback. The
+consequences were real: in `password-reset` the failed step made
+`resolveOutcome()` escalate a ticket on an "agent failure" basis, and in
+`multi-domain` the Technical agent's evidence was lost. The retry feedback
+only repeats the validation error; it doesn't teach the model a budget. The
+failure never surfaced in deterministic tests, whose hand-written fixtures
+never exceed the cap.
+
+**Options considered:** (a) raise the schema limit; (b) truncate an
+over-long summary to 400 characters in code; (c) keep the schema as is and
+state the contract explicitly in the Technical Agent's prompt.
+
+**Decision made:** (c). The 400-character constraint is unchanged. The
+Technical Agent's system prompt (which is rebuilt identically for every
+attempt, so it also applies on the retry) now says `summary` MUST be 400
+characters or fewer and that a longer one is rejected, asks for a concise,
+factual summary of only the single most relevant technical finding, and
+tells the model to put supporting detail in `evidence` instead. The limit is
+one exported constant, `AGENT_SUMMARY_MAX_CHARS` (`src/lib/ai/schemas.ts`),
+used by both the schema and the prompt so the two cannot drift apart.
+
+**Rationale:** (a) would quietly accept longer outputs and weaken a contract
+the UI and stored data are sized for, when the actual defect was that the
+model wasn't told the rule. (b) is rejected deliberately: cutting a
+structured field mid-sentence could drop or corrupt meaning (e.g. clip
+"workaround already tried and failed" to "workaround already tried"), and
+silently coercing invalid model output contradicts the project's rule that
+malformed output is validated, retried once with feedback, and otherwise
+surfaced as an honest failure — never repaired invisibly. (c) fixes the
+cause, adds no new failure mode, and leaves the retry/fallback behavior
+exactly as it was.
+
+**Evidence and tests:** Three unit tests in `tests/unit/technicalAgent.test.ts`
+cover the contract: the prompt states exactly the schema's limit; both the
+first attempt and the retry carry it, and a compliant retry recovers with the
+validation error still fed back; and a summary that stays over the limit is
+not truncated but fails honestly as `agent_failed`. A targeted live re-run of
+the two affected scenarios then showed the Technical step succeeding in both
+(summaries of 199 and 329 characters, with input-token counts consistent with
+a single attempt — retry counts are not persisted, so that part is
+inferred). `multi-domain` moved from fail (0.84) to pass (0.88). This entry
+covers only the output-length failure; it makes no claim about any other
+finding from that evaluation.
+
+**Tradeoffs:** Compliance still depends on the model following an instruction,
+so an occasional over-long summary can recur; the retry and safe fallback
+remain the backstop, unchanged. The instruction is scoped to the Technical
+Agent, which is where the failures were observed; Billing, Policy and Risk
+share the same cap but didn't fail in the live run, so their prompts were not
+touched.
+
+**Scope:** A robustness fix based on observed live-model behavior. It changes
+no routing, policy logic, `resolveOutcome()`, evaluation expectations or
+scoring, model selection, token budgets, or schema shapes.
+
+**When we'd reconsider:** If live runs show over-long summaries from the
+other agents, apply the same explicit-limit instruction to their prompts (the
+shared constant is already exported). If instruction-following alone proves
+insufficient, consider raising the cap deliberately as its own decision, not
+truncating.

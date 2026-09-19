@@ -88,9 +88,14 @@ export type TicketClassification = z.infer<typeof TicketClassificationSchema>;
 // returns this same envelope so the UI can render them uniformly.
 // ---------------------------------------------------------------------------
 
+/** Max length of an agent finding's `summary`. Exported so a prompt that
+ * tells the model the limit (see technicalAgent.ts) states exactly the
+ * number the schema enforces, and can't drift from it. */
+export const AGENT_SUMMARY_MAX_CHARS = 400;
+
 export const AgentFindingSchema = z.object({
   agentKey: AgentKeySchema,
-  summary: z.string().max(400),
+  summary: z.string().max(AGENT_SUMMARY_MAX_CHARS),
   evidence: z.array(z.string()).max(8),
   confidence: ConfidenceSchema,
   policyReferences: z.array(PolicyReferenceSchema).max(5).default([]),

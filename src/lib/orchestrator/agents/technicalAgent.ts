@@ -1,4 +1,4 @@
-import { AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
+import { AGENT_SUMMARY_MAX_CHARS, AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
 import { filterGroundedPolicyReferences, retrieveRelevantProductDocs } from "../evidence";
 import { formatConversation, formatProductDocs, buildSystemPrompt, JSON_ONLY_INSTRUCTION } from "../prompts";
 import { runStructuredStep } from "../runStructuredStep";
@@ -19,7 +19,9 @@ Distinguish between three outcomes and set exactly one matching flag:
 - "${KNOWN_AGENT_FLAGS.KNOWN_ISSUE_WORKAROUND_ALREADY_TRIED}" — same known issue, but the conversation indicates the customer already tried the documented workaround and it didn't help.
 - "${KNOWN_AGENT_FLAGS.REQUIRES_ESCALATION}" — the workaround was already tried and failed (pair this with the flag above), OR this is a new issue with no matching documentation and clear evidence of a product defect.
 
-Respond with JSON matching: {"agentKey":"technical","summary":string,"evidence":string[],"confidence":number 0-1,"policyReferences":[],"flags":string[]}. ${JSON_ONLY_INSTRUCTION}`,
+"summary" MUST be ${AGENT_SUMMARY_MAX_CHARS} characters or fewer — a hard limit: a longer summary is rejected as invalid output. Keep it concise and factual: state only the single most relevant technical finding (which documented issue applies, or that none does, and whether the workaround was already tried). Put supporting detail in "evidence" (short items), not in the summary. Stay within the limit however much context the ticket contains.
+
+Respond with JSON matching: {"agentKey":"technical","summary":string (at most ${AGENT_SUMMARY_MAX_CHARS} characters),"evidence":string[],"confidence":number 0-1,"policyReferences":[],"flags":string[]}. ${JSON_ONLY_INSTRUCTION}`,
   );
 
   const user = `Ticket: ${context.ticketSummary}
