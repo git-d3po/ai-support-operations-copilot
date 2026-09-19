@@ -13,6 +13,17 @@ export interface ResolveOutcomeResult {
   escalation: EscalationDecision | null;
 }
 
+/** The one policy this invariant is grounded in — a deterministic reference,
+ * not a citation a model produced. */
+const ACCOUNT_SECURITY_POLICY_SLUG = "account-security-policy";
+const ACCOUNT_SECURITY_ESCALATION_REASON = `Per ${ACCOUNT_SECURITY_POLICY_SLUG}: suspected account compromise must always be escalated to Trust & Safety and not resolved directly.`;
+/** ResolutionDecision.summary / EscalationDecision.reason are capped at 400 chars. */
+const MAX_TEXT = 400;
+
+function fitToLimit(text: string): string {
+  return text.length <= MAX_TEXT ? text : `${text.slice(0, MAX_TEXT - 1)}…`;
+}
+
 function average(numbers: number[]): number {
   if (numbers.length === 0) return 0;
   return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
@@ -28,9 +39,11 @@ function average(numbers: number[]): number {
  *
  * Priority order (first match wins) mirrors the synthetic Escalation
  * Policy: a failed classification or a Risk-recommended escalation always
- * wins; a Policy Agent decision governs refund/deny outcomes; Technical's
- * flags govern technical resolutions; Billing's flags cover payment-status
- * replies; anything left over falls through to a confidence-based default.
+ * wins, and so does a suspected account compromise (Account Security Policy,
+ * enforced deterministically below); a Policy Agent decision governs
+ * refund/deny outcomes; Technical's flags govern technical resolutions;
+ * Billing's flags cover payment-status replies; anything left over falls
+ * through to a confidence-based default.
  */
 export function resolveOutcome(
   classification: TicketClassification,
@@ -58,6 +71,37 @@ export function resolveOutcome(
         reason: "AI classification failed to produce valid output after retrying.",
         targetTeam: "senior_support",
         severity: "medium",
+      },
+    };
+  }
+
+  // 1b. Account Security Policy: reports of suspicious account activity "must
+  // always be escalated to Trust & Safety" and not resolved directly
+  // (pre-live spec; the evaluation table says "Security always escalates,
+  // regardless of other findings"). Enforced here, deterministically, so it
+  // does not depend on the Risk agent choosing to recommend escalation or on
+  // which team it names. Severity is not redefined: Risk's is kept when
+  // supplied, otherwise the same default rule 2 already uses. The trigger is
+  // still the classified intent, itself model-derived.
+  if (classification.intent === "account_security") {
+    const riskDetail = riskFinding?.escalationRecommended
+      ? (riskFinding.escalationReason ?? riskFinding.summary)
+      : null;
+    const reason = fitToLimit(
+      riskDetail ? `${ACCOUNT_SECURITY_ESCALATION_REASON} Risk assessment: ${riskDetail}` : ACCOUNT_SECURITY_ESCALATION_REASON,
+    );
+    return {
+      resolution: {
+        action: "escalate",
+        summary: reason,
+        confidence: riskFinding?.escalationRecommended ? riskFinding.confidence : classification.confidence,
+        requiresHumanReview: true,
+      },
+      escalation: {
+        required: true,
+        reason,
+        targetTeam: "trust_and_safety",
+        severity: riskFinding?.severity ?? "medium",
       },
     };
   }

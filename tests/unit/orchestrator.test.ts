@@ -216,6 +216,51 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
     expect(outcome.escalation?.targetTeam).toBe("engineering");
   });
 
+  // The Account Security Policy requires suspected compromise to always escalate
+  // to Trust & Safety. That must not depend on the Risk agent's judgment: here
+  // Risk (mock) declines to recommend escalation, yet the run must still escalate.
+  it("account_security still escalates to Trust & Safety when Risk does not recommend escalation", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider({
+        ticket_classification: JSON.stringify({
+          intent: "account_security",
+          domains: [],
+          sentiment: "neutral",
+          confidence: 0.93,
+          summary: "Customer reports an API key they did not create.",
+          keyEvidence: ["API key none of us created"],
+        }),
+        risk_agent_finding: JSON.stringify({
+          agentKey: "risk",
+          summary: "No further risk indicators beyond the report itself.",
+          evidence: ["Account risk score is low"],
+          confidence: 0.9,
+          policyReferences: [],
+          flags: [],
+          escalationRecommended: false,
+          escalationReason: null,
+          targetTeam: null,
+          severity: null,
+        }),
+        response_agent_reply: JSON.stringify({ body: "We're escalating this to the right team.", tone: "neutral", nextSteps: [] }),
+      }),
+    );
+
+    const outcome = await runOrchestration({
+      ticketId: "test-ticket",
+      ticketSummary: "Unrecognized API key on our account",
+      conversation: [{ author: "customer", body: "There's an API key in our settings none of us created." }],
+      accountContext: makeAccountContext(),
+    });
+
+    expect(outcome.agentsInvoked).toEqual(["risk", "response"]);
+    expect(outcome.resolution.action).toBe("escalate");
+    expect(outcome.resolution.requiresHumanReview).toBe(true);
+    expect(outcome.escalation?.targetTeam).toBe("trust_and_safety");
+    expect(outcome.escalation?.reason).toContain("account-security-policy");
+  });
+
   it("never invokes every agent for a narrow ticket (dynamic selection still holds with real classification)", async () => {
     registerProvider(
       "anthropic",

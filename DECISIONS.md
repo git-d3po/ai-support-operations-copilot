@@ -1708,3 +1708,94 @@ so a ticket mislabeled with a different intent is not covered.
 **When we'd reconsider:** If more intents gain deterministic coverage, move the
 intent → specialist mapping into a single explicit table instead of a growing
 chain of conditions.
+
+---
+
+## 2026-09-19 — Mandatory escalation to Trust & Safety for `account_security`, enforced at the resolution layer
+
+**Context:** The pre-live specification is explicit. The Account Security
+Policy says reports of suspicious account activity "must always be escalated
+to Trust & Safety" and are not to be resolved directly; the Escalation Policy
+names Trust & Safety for "any suspected account compromise"; the evaluation
+table for `suspicious-activity` says "Security always escalates, regardless of
+other findings"; and the product spec calls Risk the safety net that can force
+escalation regardless of other findings. `selectAgents()` already guaranteed
+that the Risk agent runs for the `account_security` intent, but
+`resolveOutcome()` left both whether to escalate and where to send it entirely
+to the Risk agent's model output. Run through the real code, that allowed a
+suspected compromise to be auto-closed (`reply_and_close`, no human review) when
+Risk did not recommend escalation, to be sent to `senior_support` when Risk
+named that team, left null, or failed, to be escalated to `engineering` or
+resolved by a Technical or Policy finding when Risk stayed silent.
+
+**Options considered:** (a) leave it to the Risk agent's judgment and its
+prompt; (b) enforce only the destination when Risk recommends escalation;
+(c) enforce a deterministic `account_security` → escalate → Trust & Safety
+rule in `resolveOutcome()`.
+
+**Decision made:** (c), in `src/lib/orchestrator/resolve.ts`, as an explicit
+rule placed after the existing classification-failure rule and before the
+Risk-recommended-escalation rule. When the classified intent is
+`account_security` the outcome is `escalate`, `requiresHumanReview: true`,
+target team `trust_and_safety`, whatever the Risk agent or any other specialist
+found. A failed classification keeps its existing precedence (`senior_support`).
+
+**Why relying on Risk's judgment was insufficient:** The requirement says
+"always". A model's recommendation cannot guarantee that; only code can. (b)
+would fix the destination but still let a non-recommending Risk auto-close the
+ticket, which is the more serious failure.
+
+**Why the resolution layer:** It is the deterministic layer that already
+encodes the "security first" priority and the only place that decides the final
+action, so the guarantee holds whichever other agents ran and whatever they
+found. It is also where a Risk failure is handled, and that fallback names a
+different team.
+
+**Why the policy reference is deterministic:** The project requires
+escalations to cite the policy they rely on. The escalation schema has no
+policy-reference field, so the citation goes in the existing reason text, from
+a constant (`account-security-policy`) and not from any model-generated
+citation. When Risk did recommend escalation, its reason is appended after the
+fixed citation, within the schema's 400-character limit; the citation is never
+the part that is truncated.
+
+**Severity was intentionally not redefined.** No artifact specifies a severity
+for these escalations, and inventing one would be a new product-policy
+decision. Risk's severity is retained when it supplied one; otherwise the rule
+uses `"medium"`, the same default the existing Risk-recommended-escalation rule
+already applies when Risk gives none. The confidence is Risk's when Risk
+recommended escalation and otherwise the classification's, so the deterministic
+outcome does not borrow a "no escalation" confidence.
+
+**Basis and verification:** This change rests on the pre-live specification, not
+on improving a live evaluation score. `suspicious-activity` already expects
+escalation and its expectation is unchanged; no scenario, expectation, fixture,
+scoring, threshold, prompt, routing or seeded data changed, and no live
+evaluation was run. A differential comparison of the committed and new
+`resolveOutcome()` across 12,000 combinations (10 intents × classification
+failed or not × 8 Risk outcomes × 5 Policy × 5 Technical × 3 Billing findings)
+showed that only `account_security` results changed (all 600 of its
+combinations), none changed for any other intent or under classification
+failure, and every new `account_security` result escalates to Trust & Safety
+with human review and cites the policy, within the schema limits. In the old
+code, 120 of those 600 were not escalated and 405 went to another team.
+Resolution and orchestrator tests cover Risk recommending, declining, choosing
+another team or none, failing, Technical and Policy findings, the classification
+failure precedence, the citation, and the schema limits.
+
+**Remaining limitation:** The trigger is still the classified intent, which is
+itself model-derived and sees only the subject and message. A compromise report
+labeled with another intent is not covered by this rule; it is still caught
+only when Risk is routed by sentiment or domains. The rule makes the outcome
+deterministic for the label; it does not improve detection. The classifier is
+not told the taxonomy, and the seeded background template for this intent
+("Enabling SSO for our team") is a benign setup question that does not fit the
+definition, so a ticket like it labeled `account_security` would now be
+escalated (the safe direction, at some cost to operator workload). That
+inconsistency is recorded, not fixed, here. The policy's clause about not
+disclosing account details until identity is reverified is a separate
+requirement that nothing in the Response layer enforces, and is not addressed.
+
+**When we'd reconsider:** If the intent label proves an unreliable trigger, or
+the classifier is given the formal taxonomy, revisit what should trigger the
+invariant (and whether severity should be specified) as a separate decision.
