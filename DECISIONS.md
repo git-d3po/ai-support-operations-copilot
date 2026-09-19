@@ -1516,3 +1516,116 @@ follow-up audit, not part of this decision.
 **When we'd reconsider:** If live runs show another intent losing its primary
 specialist to an empty or partial `domains` list, apply the same deterministic
 pattern, or move the intent → specialist mapping into a single explicit table.
+
+---
+
+## 2026-09-19 — Formalize the intent taxonomy and define a primary-intent rule (documentation only)
+
+**Context:** The ten intents in `TICKET_INTENTS` were only a list of names.
+The classifier prompt says "exactly one of" and no document defined any
+intent or said how to choose one when a ticket contains several issues, yet
+`expectedIntent` is graded by exact match. A live evaluation surfaced the
+consequence on the `multi-domain` scenario (expected `billing_question`,
+classified `duplicate_charge`), and a read-only audit then found that the
+underlying gap is broader than that one scenario: no intent is formally
+defined, the seeded data uses `billing_question` and `account_security`
+inconsistently, and there is no primary-intent rule.
+
+**Options considered:** (a) document the taxonomy and a primary-intent rule,
+changing no behavior; (b) change the `multi-domain` expected intent on its own;
+(c) change the classifier prompt or taxonomy; (d) introduce a separate
+multi-intent concept.
+
+**Decision made:** (a). `EVALUATION.md` gains a section, "Intent taxonomy and
+primary-intent rule", which documents the *intended product specification*
+and, explicitly, not current classifier behavior. It contains:
+- what `intent` and `domains` each represent. That `intent` names the single
+  issue that should govern handling, and that secondary issues are carried by
+  `domains` and never by an extra or "mixed" intent, are **specification
+  choices**, labeled as such; no pre-live artifact states them;
+- a definition of each of the ten intents with its evidence and an evidence
+  strength (strong, limited, or insufficient; "limited" also covers
+  conflicting evidence), so that "clear by usage" is distinguished from
+  "formally specified" and no definition is more precise than its evidence;
+- a general primary-intent rule: (1) specificity: `billing_question`,
+  `feature_question` and `general_inquiry` are designated fallbacks, used only
+  when no issue has a more specific intent (a specification decision);
+  (2) precedence by tier: `account_security`, then Policy-decided outcomes
+  (`duplicate_charge`, `refund_request`, `cancellation`), then technical
+  (`technical_issue`, `password_reset`), then billing status
+  (`failed_payment`); (3) ties go to the issue the customer states first, a
+  stated convention, not derived from evidence; (4) all other issues are
+  secondary and expressed through `domains`;
+- an audit of all ten curated scenarios against the rule.
+
+**What the evidence does and does not support:** The evidence used is limited
+to artifacts that predate any live evaluation: the seeded ticket templates,
+the scenario descriptions, rationales and expectations, the policies and
+product docs, the schema descriptions, and the pre-live product and evaluation
+documentation. They show how intents are used and how routing, policy and
+resolution work; they do not, by themselves, define what `intent` is for or
+how to choose among several issues, so the rule is an interpretation of that
+evidence subject to the specification choices above. The support differs by
+tier and no single source is credited with every tier:
+- *Tier 1 (`account_security`)*: the product spec's description of the Risk
+  agent, the scoring notes and `resolveOutcome()` checking Risk first, the
+  Account Security and Escalation Policies, and the pre-live Risk routing rule.
+- *Tier 2 above tier 3*: the scoring notes (Policy's decision is checked before
+  Technical's flags) and the order of `resolveOutcome()`'s rules; that these
+  intents are Policy-decided comes from the relevant policies, the expected
+  agents of the scenarios, and the pre-live routing rules that add Policy.
+- *Tier 3 (technical)*: the Technical agent's role in the product spec, the
+  Technical-flag rules in `resolveOutcome()`, the technical scenarios, and the
+  Technical prompt's `auto_resolvable` example.
+- *Tier 4 (`failed_payment` below technical)*: **limited, single-source
+  evidence.** Only the rule order in `resolveOutcome()` places Billing's
+  payment-status handling after Technical's. The scoring notes and the product
+  spec do not establish a Billing-versus-Technical precedence, and no curated
+  scenario exercises it. It is recorded as a specification interpretation that
+  could be revisited.
+
+No live classifier output was used to define any intent or the rule, and the
+routing overrides added after live findings were not cited as evidence. The
+`account_security` definition is taken from the Account Security Policy, the
+Escalation Policy and the `suspicious-activity` scenario; the seeded template
+for that intent ("Enabling SSO for our team") does not fit it and is recorded
+as a known, unresolved inconsistency rather than silently used to bend the
+definition. The pre-live evidence for `billing_question` is **conflicted**
+(informational templates and FAQ versus the `multi-domain` scenario, which
+expects it for a mixed ticket), so its definition is limited to the
+informational core and no exclusion of remedy or problem tickets is claimed.
+
+**Audit result:** Nine of ten scenarios are consistent with the rule.
+`multi-domain` is inconsistent under this specification, and the verdict has
+two parts on different footing. What the artifacts independently support is the
+ordering of its two issues, a Policy-decided outcome (tier 2) above a technical
+one (tier 3), which selects `duplicate_charge` over `technical_issue`. That
+`billing_question` is not an eligible primary intent follows from designating
+it a fallback, which is a specification decision, not an established fact. The
+tier order was fixed from the pre-live evidence before it was applied to any
+scenario; that it selects the same label the live classifier chose is recorded
+as a consistency observation and context only, not as the basis of the rule.
+
+**Not changed:** No evaluation expectation, scenario, fixture, test,
+production code, classifier prompt, schema, routing, scoring or threshold was
+changed, and no live evaluation was run. The `multi-domain` expected intent
+therefore stays `billing_question` for now. Whether to change it, or to
+specify `billing_question` differently, is deferred to a separate, documented
+decision; it must not be combined with any scoring or threshold change.
+
+**Tradeoffs:** The definitions and rule are specification only. The classifier
+currently receives just the intent list, not this taxonomy or the precedence
+rule, so classifier behavior is unchanged; whether to tell the model is a
+separate prompt decision, needing a fresh full evaluation. The tie-break is a
+convention, and the fallback designation and the tier order are specification
+decisions or interpretations. Several intents rest on limited evidence
+(`feature_question`, `general_inquiry`, and `billing_question`, whose evidence
+also conflicts), and the boundaries between them, and the intent for an
+SSO-setup question, remain insufficiently specified rather than invented.
+`cancellation`, `feature_question`, the tie-break and the `failed_payment`
+tier placement are not exercised by any curated scenario.
+
+**When we'd reconsider:** If new scenarios or seeded data show the rule giving
+an unreasonable primary intent, or if the classifier prompt is later changed
+to convey it, revisit the tiers, the fallback designation and the tie-break
+together and re-baseline.

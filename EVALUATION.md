@@ -30,6 +30,194 @@ action, and free-text notes explaining *why* that's correct. These are
 seeded into the `EvaluationCase` table, one per curated `Ticket`
 (`ticket.scenarioKey` links them).
 
+## Intent taxonomy and primary-intent rule
+
+Until this section existed, the ten intents in `TICKET_INTENTS`
+(`src/lib/ai/schemas.ts`) were only a list of names: the classifier prompt
+says "exactly one of" and nothing in the repository defined them or said how
+to pick one for a ticket with several issues. Each `expectedIntent` below is
+graded by exact match (see "Evaluation dimensions"), so the meaning of a
+label has to be specified, not inferred.
+
+**Specification, not implementation.** These definitions and the
+primary-intent rule document the intended product specification. They do not
+claim that the current classifier prompt already encodes them: the classifier
+currently receives only the list of intent names (`TICKET_INTENTS`), not this
+taxonomy or the precedence rule.
+
+**Evidence base.** The evidence used is limited to artifacts that predate any
+live model evaluation: the seeded ticket templates
+(`prisma/data/ticketTemplates.ts`), the curated scenario descriptions,
+rationales and expectations (`prisma/data/scenarios.ts`), the seeded policies
+and product docs, the schema field descriptions, and the pre-live product and
+evaluation documentation. No live classifier output was used to define any
+intent or the rule. The routing overrides added after live findings
+(`duplicate_charge`, `password_reset`) are deliberately not cited as evidence.
+
+Those artifacts show how each intent is used and how routing, policy and
+resolution work. They do **not** state, on their own, what `intent` is *for*
+or how to choose among several issues in one ticket. Those are
+**specification choices** made in this section and labeled as such where they
+occur; the rule is then interpreted from the pre-live evidence subject to those
+choices. Evidence strength is stated per intent: **strong** means two or more
+independent kinds of artifact agree; **limited** means one kind, or artifacts
+that conflict; **insufficient** is said outright where it applies. A
+definition is never more precise than its evidence.
+
+### What `intent` and `domains` each represent
+
+- **`intent`** is the single primary classification; exactly one value is
+  chosen (the schema takes one `TicketIntentSchema` value). **Specification
+  choice:** it names the one issue that should govern how the ticket is
+  handled. No pre-live artifact states this; it is the premise on which the
+  primary-intent rule below is built.
+- **`domains`** is the set of all specialist domains (`billing`, `policy`,
+  `technical`, `risk`) the ticket implicates (schema: "Which specialist
+  domains this ticket touches"). It can include domains beyond the primary
+  intent's, and can be empty.
+- **Specification choice:** a ticket may therefore involve several issues. The
+  primary issue is `intent`; secondary issues are represented through
+  `domains` (and the specialists routed from them), never through an extra
+  intent. There is no "mixed" intent and none should be added. `domains`
+  records which specialists are needed, not what each secondary issue is.
+
+### Definitions
+
+| Intent | Means | Evidence | Strength |
+|---|---|---|---|
+| `password_reset` | The customer has lost access because of a password problem (forgotten password, or a reset email that has not arrived, or access lost after changing the account email) and wants access restored through the standard reset flow. | Both seeded templates; Account Security Policy ("Password reset requests are handled automatically via the standard verified-email reset flow … unless the account has an open security flag"); the `password-reset` scenario description; the Technical Agent prompt's `auto_resolvable` example | strong |
+| `duplicate_charge` | The customer reports being charged more than once for the same thing. The Duplicate Charge Policy defines it: same account, same amount, same invoice or subscription, within 48 hours, with no plan or quantity change. A request to refund a duplicate is `duplicate_charge`, not `refund_request` (see the specificity clause). | Template ("charged twice"); Duplicate Charge Policy; `duplicate-billing` description ("a textbook duplicate charge") | strong |
+| `refund_request` | The customer asks for money back on a charge that is not a duplicate: end of use, unused time or seats, an accidental upgrade. Decided under the Refund Policy. | Two templates; Refund Policy; the two refund scenarios; the pre-live routing rule that adds Policy | strong |
+| `failed_payment` | The customer reports or asks about a charge that failed or was declined, and its retry or payment method. | Template; Invoices & Billing FAQ (failed charges are retried); scenario | strong |
+| `technical_issue` | A product malfunction, performance or integration problem: something the customer expects to work is not working. | Two templates (integration not posting, slow dashboard); the known-issue and troubleshooting docs; the two technical scenarios | strong |
+| `account_security` | Suspected unauthorized access or compromise: logins from unrecognized locations, unexpected permission changes, unrecognized API keys. Such reports always escalate to Trust & Safety and are not resolved directly. | Account Security Policy (explicit); Escalation Policy (Trust & Safety); `suspicious-activity` scenario; the pre-live routing rule that always adds Risk | strong (from policy and scenario) |
+| `cancellation` | The customer asks to end the subscription; it takes effect at the end of the billing period. | Template; Cancellation Policy; the pre-live routing rule that adds Risk and Policy | strong for meaning; no curated scenario exercises it |
+| `billing_question` | Informational billing questions: what a line item is, or when and how charges are billed. The pre-live `multi-domain` scenario also expects this intent for a mixed ticket containing a duplicate charge and a technical issue, and no artifact explains that use. Beyond the informational core, its scope is **not specified by the evidence**. | Two seeded templates and the Invoices & Billing FAQ (informational use); the `multi-domain` scenario's expected intent (mixed-ticket use) | limited and **conflicted**: the pre-live artifacts disagree about its scope, and this document does not resolve that by evidence |
+| `feature_question` | A question about whether or how the product supports a capability. | One template only (a customer asking whether automations can run on a recurring schedule); no scenario, no routing rule, no policy category | limited |
+| `general_inquiry` | The residual intent: no identifiable product, billing or account issue (vague, under-specified, or a benign check-in). Handled with a response only. | The `ambiguous-request` scenario; one "checking in" template | limited; the boundary with `billing_question` and `feature_question` is **insufficiently specified** |
+
+Known gaps, stated rather than resolved:
+
+- **`account_security` template.** The seeded background template for this
+  intent is "Enabling SSO for our team", a benign setup question that does not
+  fit the definition above, which is taken from the policy and scenario
+  evidence. Which intent, if any, an SSO-setup question should have is
+  **insufficiently specified**: no artifact decides it.
+- **`billing_question` scope.** The pre-live evidence conflicts: the
+  templates and the FAQ show informational use, while the `multi-domain`
+  scenario expects it for a mixed ticket. This document does not settle that
+  by evidence. Treating `billing_question` as a fallback intent (rule clause 1
+  below) is a **specification decision**, not an artifact-derived fact.
+- **Requests with no matching intent.** A plan change (for example returning
+  to a lower plan) has no intent of its own. It can only appear as a secondary
+  issue carried by `domains`.
+
+### Primary-intent rule for mixed tickets
+
+The rule builds on the specification choice above (the primary intent names
+the issue that should govern handling) and on the resolution priority the
+project documented before live testing. That priority does not come from one
+uniform source: the support differs by tier, and is stated per tier here so
+that no source is credited with more than it establishes.
+
+- **Tier 1, `account_security`.** Supported by the product spec's description
+  of the Risk agent ("the safety net that can force escalation regardless of
+  other findings"), the scoring notes below ("Risk's escalation call is
+  checked before Policy's decision"), `resolveOutcome()` checking Risk first,
+  the Account Security and Escalation Policies, and the pre-live routing rule
+  that always adds Risk for this intent.
+- **Tier 2 above tier 3.** Policy-decided outcomes (`duplicate_charge`,
+  `refund_request`, `cancellation`) above technical ones is supported by the
+  scoring notes (Policy's decision "is checked before Technical's flags") and
+  by the order of `resolveOutcome()`'s rules. That these intents are decided by
+  Policy is supported by the Duplicate Charge, Refund and Cancellation
+  Policies, the expected agents of the refund and duplicate scenarios, and, for
+  `refund_request` and `cancellation`, the pre-live routing rules that add
+  Policy.
+- **Tier 3, technical.** Supported by the Technical agent's role in the product
+  spec, the Technical-flag rules in `resolveOutcome()`, the expected agents of
+  the technical scenarios, and the Technical prompt's `auto_resolvable`
+  example for `password_reset`.
+- **Tier 4, `failed_payment` below technical: limited, single-source
+  evidence.** The only pre-live source that places Billing's payment-status
+  handling after Technical's is the rule order (and its docstring) in
+  `resolveOutcome()`. The scoring notes and the product spec do **not**
+  establish any Billing-versus-Technical precedence. The placement may simply
+  reflect that Billing's flag yields only a monitoring reply, and no curated
+  scenario exercises it. Treat it as a specification interpretation that could
+  be revisited.
+
+The tier order is therefore a specification interpretation of this evidence,
+not a behavior the classifier currently enforces.
+
+Apply in order:
+
+1. **Specificity.** Identify each distinct issue in the ticket and the most
+   specific intent that describes it. `billing_question`, `feature_question`
+   and `general_inquiry` are *fallback* intents: one is primary only when no
+   issue in the ticket has a more specific intent. (Designating them as
+   fallbacks is a specification decision. For `billing_question` in
+   particular the pre-live evidence is conflicted; see the definitions.)
+2. **Precedence.** Among the specific intents, choose the highest tier:
+   1. `account_security`
+   2. Outcomes decided by a Policy decision: `duplicate_charge`,
+      `refund_request`, `cancellation`
+   3. Technical outcomes: `technical_issue`, `password_reset`
+   4. Billing status: `failed_payment`
+
+   Within tier 2, the more specific intent wins (a refund request for a
+   duplicate charge is `duplicate_charge`).
+3. **Ties.** If two issues share the highest tier and neither is more
+   specific, choose the issue the customer states first: the subject line if
+   it names them, otherwise the message body. This is a deterministic
+   convention, not derived from any artifact; it exists only so the rule
+   always yields exactly one intent. No new intent is created for a tie.
+4. **Everything else** is a secondary issue and is expressed through
+   `domains`, not by changing `intent`.
+
+This rule states which intent is primary under the specification. It does not
+state that the classifier currently follows it: the classifier receives only
+the intent list, not this rule, and whether it should be told is a separate
+prompt decision that has not been made.
+
+### Audit of the curated scenarios against the rule
+
+Applied after the rule was written, as a consistency check on the existing
+expectations. No expectation was changed.
+
+| Scenario | Expected intent | Issues in the ticket | Rule selects | Verdict |
+|---|---|---|---|---|
+| `password-reset` | `password_reset` | Regain access after a forgotten password | `password_reset` | consistent |
+| `duplicate-billing` | `duplicate_charge` | A duplicate charge, plus the request to refund it (the remedy) | `duplicate_charge` (specificity over `refund_request`) | consistent |
+| `prohibited-refund` | `refund_request` | A refund request | `refund_request` | consistent |
+| `legitimate-refund` | `refund_request` | A refund, plus a return to a lower plan (no intent of its own) | `refund_request` (the plan change is secondary) | consistent |
+| `failed-payment` | `failed_payment` | A failed charge and its retry | `failed_payment` | consistent |
+| `known-technical-issue` | `technical_issue` | Automations not firing (the upgrade is context) | `technical_issue` | consistent |
+| `technical-escalation` | `technical_issue` | The same issue, workaround already tried | `technical_issue` | consistent |
+| `suspicious-activity` | `account_security` | An unrecognized login and an unrecognized API key | `account_security` | consistent |
+| `ambiguous-request` | `general_inquiry` | No identifiable issue | `general_inquiry` | consistent |
+| `multi-domain` | `billing_question` | A duplicate proration charge (`duplicate_charge`, tier 2) and broken automations (`technical_issue`, tier 3) | `duplicate_charge` (tier 2 outranks tier 3; `billing_question` is not eligible **because clause 1 designates it a fallback**, a specification decision) | **inconsistent under this specification** |
+
+Notes on the audit:
+
+- **`multi-domain` is inconsistent with the rule, and its expectation is
+  deliberately unchanged.** Two parts of that verdict rest on different
+  footing. What the artifacts independently support is the ordering of the two
+  issues: a Policy-decided outcome (tier 2) above a technical one (tier 3),
+  which selects `duplicate_charge` over `technical_issue`. That
+  `billing_question` is *not eligible* as the primary intent depends on
+  clause 1, which designates it a fallback: a specification decision, not a
+  pre-live fact. The pre-live evidence for `billing_question` conflicts
+  (informational templates versus this scenario's own expectation), and the
+  scenario rationale does not explain the label. Whether to change the
+  expectation, or to specify `billing_question` differently, is a separate
+  decision, to be made and documented on its own.
+- No curated scenario exercises the tie-break (clause 3), `cancellation` or
+  `feature_question`.
+- The rule concerns only `intent`. Which agents run is decided by
+  `selectAgents()` from `domains`, the intent overrides and sentiment, and is
+  graded separately as routing accuracy.
+
 ## Evaluation dimensions
 
 | Dimension | Question | Computed from |
