@@ -33,6 +33,17 @@ export function selectAgents(
   if (classification.intent === "refund_request") {
     selected.add("policy");
   }
+  // A duplicate charge leads to a refund, which only a Policy decision may
+  // authorize (resolveOutcome() refunds solely on Policy "approve"). A live
+  // classifier returned domains ["billing"] for this intent, so Policy never
+  // ran and no refund could be authorized — hence deterministic, not left to
+  // the classifier. Billing is added too: it supplies the duplicate-charge
+  // evidence the Policy decision rests on. See DECISIONS.md ("Deterministic
+  // routing for consequential policy decisions...").
+  if (classification.intent === "duplicate_charge") {
+    selected.add("billing");
+    selected.add("policy");
+  }
   if (classification.sentiment === "angry" || classification.sentiment === "urgent") {
     selected.add("risk");
   }

@@ -59,6 +59,37 @@ const DUPLICATE_BILLING_RESPONSES = {
 };
 
 describe("runOrchestration (real pipeline, MockProvider)", () => {
+  // Regression for the first live smoke test: the real classifier returned
+  // domains ["billing"] (no "policy") for a duplicate charge. The pipeline
+  // must still run Policy and reach refund_customer — routing can't depend
+  // on the classifier volunteering "policy" for this intent.
+  it("duplicate charge still reaches Policy and refund_customer when the classifier flags only billing", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider({
+        ...DUPLICATE_BILLING_RESPONSES,
+        ticket_classification: JSON.stringify({
+          intent: "duplicate_charge",
+          domains: ["billing"],
+          sentiment: "neutral",
+          confidence: 0.98,
+          summary: "Customer was charged twice and requests a refund.",
+          keyEvidence: ["charged $399.00 twice"],
+        }),
+      }),
+    );
+
+    const outcome = await runOrchestration({
+      ticketId: "test-ticket",
+      ticketSummary: "Charged twice this billing cycle",
+      conversation: [{ author: "customer", body: "I was charged twice for $399." }],
+      accountContext: makeAccountContext({ policies: [DUPLICATE_CHARGE_POLICY] }),
+    });
+
+    expect(outcome.agentsInvoked).toEqual(["billing", "policy", "response"]);
+    expect(outcome.resolution.action).toBe("refund_customer");
+  });
+
   it("runs classification -> selection -> agents -> resolution -> response end to end", async () => {
     registerProvider("anthropic", createTaskMockProvider(DUPLICATE_BILLING_RESPONSES));
 

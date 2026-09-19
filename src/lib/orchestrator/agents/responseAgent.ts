@@ -1,4 +1,4 @@
-import { CustomerResponseSchema } from "@/lib/ai/schemas";
+import { authorizedCommitmentsInstruction, customerResponseSchemaFor } from "../responseGuard";
 import { formatConversation, buildSystemPrompt, JSON_ONLY_INSTRUCTION } from "../prompts";
 import { summarizePriorFindings } from "../evidence";
 import { runStructuredStep } from "../runStructuredStep";
@@ -13,7 +13,7 @@ function buildRequest(context: AgentContext, retryContext?: string) {
 
   const system = buildSystemPrompt(
     "response_agent_reply",
-    `You are the Response Agent for Halcyon. Draft the customer-facing reply. You do NOT make policy or resolution decisions yourself — the resolution below has already been decided by the orchestration pipeline; your only job is to communicate it clearly, accurately, and with an appropriate tone. Never state a different outcome than the resolution provided. Never invent a policy justification not present in the findings below.
+    `You are the Response Agent for Halcyon. Draft the customer-facing reply. You do NOT make policy or resolution decisions yourself — the resolution below has already been decided by the orchestration pipeline; your only job is to communicate it clearly, accurately, and with an appropriate tone. Never state a different outcome than the resolution provided. Never invent a policy justification not present in the findings below. Never promise a refund unless the "Authorized commitments" line below says one is authorized — a customer must never be told money is coming that the resolution did not approve.
 
 If the resolution escalates, tell the customer their request needs a closer look from the right team and set expectations — do not name internal team names. If it denies a request, explain why using the actual reasoning from the findings, without being curt. If it approves/refunds, confirm the action clearly. If it asks for more information, ask a specific clarifying question.
 
@@ -27,6 +27,7 @@ Conversation so far:
 ${formatConversation(context.conversation)}
 
 Resolution decision: action=${resolution.action}, summary="${resolution.summary}"
+${authorizedCommitmentsInstruction(resolution.action)}
 ${escalation ? `Escalation: yes, reason="${escalation.reason}"` : "Escalation: no"}
 
 Specialist agent findings:
@@ -41,9 +42,13 @@ export const responseAgent: SpecialistAgent = {
   description:
     "Drafts the proposed customer response from the resolution decision and the other agents' findings.",
   async run(context): Promise<AgentResult> {
+    // The schema carries the refund-authorization contract for THIS run's
+    // resolution (responseGuard.ts): a reply that over-promises fails
+    // validation, gets one retry with the reason fed back, then degrades
+    // to the safe fallback like any other malformed output.
     const { data, parseError, metrics } = await runStructuredStep(
       "response",
-      CustomerResponseSchema,
+      customerResponseSchemaFor(context.resolution?.action ?? "escalate"),
       (retryContext) => buildRequest(context, retryContext),
     );
 

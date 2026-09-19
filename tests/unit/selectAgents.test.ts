@@ -42,6 +42,30 @@ describe("selectAgents", () => {
     );
   });
 
+  // Regression: the first live smoke test (duplicate-billing) had the real
+  // classifier return domains ["billing"] only. Routing must not depend on
+  // the classifier also listing "policy" for this intent.
+  it("duplicate charge routes to billing + policy even when the classifier flags only billing", () => {
+    const result = selectAgents(classification({ intent: "duplicate_charge", domains: ["billing"] }));
+    expect(result).toEqual(["billing", "policy", "response"]);
+  });
+
+  it("duplicate charge routes to billing + policy even when the classifier flags no domains", () => {
+    const result = selectAgents(classification({ intent: "duplicate_charge", domains: [] }));
+    expect(result).toEqual(["billing", "policy", "response"]);
+  });
+
+  it("duplicate charge does not add risk or technical on its own", () => {
+    const result = selectAgents(classification({ intent: "duplicate_charge", domains: ["billing"] }));
+    expect(result).not.toContain("risk");
+    expect(result).not.toContain("technical");
+  });
+
+  it("failed payment does NOT pull in policy (no policy decision is needed to monitor a retry)", () => {
+    const result = selectAgents(classification({ intent: "failed_payment", domains: [] }));
+    expect(result).not.toContain("policy");
+  });
+
   it("refund request always pulls in policy, even if the classifier only flagged billing", () => {
     const result = selectAgents(classification({ intent: "refund_request", domains: ["billing"] }));
     expect(result).toEqual(["billing", "policy", "response"]);

@@ -1209,3 +1209,90 @@ the list of valid keys. `npm run eval -- duplicate-billing` and
 all 10 as before. Covered by two integration tests (one scenario runs via
 the real pipeline; unknown key rejected, nothing persisted). Scoring and
 routing are untouched.
+
+---
+
+## 2026-09-19 — Deterministic routing for consequential policy decisions, and an enforced refund-authorization contract
+
+**Context:** The first real live call (`npm run eval -- duplicate-billing`,
+Haiku 4.5 classifier/Billing, Sonnet 5 Response) completed cleanly — auth,
+JSON parsing, the 2048-token budget, persistence and provider provenance all
+worked — but scored 0.47 and exposed two related defects that no
+deterministic test could:
+1. The real classifier returned `intent: duplicate_charge`, `domains:
+   ["billing"]`. `selectAgents()` only forced Policy for `refund_request` and
+   `cancellation`, so for `duplicate_charge` Policy depended on the classifier
+   volunteering `"policy"`. It didn't; Policy never ran, no policy decision
+   existed, and `resolveOutcome()` (which refunds *only* on a grounded Policy
+   "approve") fell through to the confidence default, `reply_and_close`.
+   The e2e and dry-run fixtures hard-coded `["billing","policy"]`, and Audit
+   #3's hand-trace assumed a classifier output matching `expectedOutcome`, so
+   this divergence was invisible until a real model answered.
+2. The Response agent, given a vague resolution ("Resolved based on
+   specialist agent findings"), nevertheless told the customer "Refund Being
+   Processed" — promising money the pipeline had not authorized. Its prompt
+   already said never to state a different outcome than the resolution;
+   prompt wording alone didn't hold.
+
+**Options considered:**
+- *Routing:* (a) tighten the classifier prompt; (b) add `duplicate_charge`
+  to `selectAgents()`'s existing deterministic overrides; (c) a model call
+  to decide routing.
+- *Response contract:* (a) stronger prompt only; (b) a self-declared
+  `promisesRefund` field in the response schema; (c) derive the authorized
+  commitments from the resolution, state them in the prompt, and validate
+  the output deterministically through the existing schema → retry →
+  fallback path.
+
+**Decision made:** Routing (b), Response (c).
+- `selectAgents.ts`: `duplicate_charge` deterministically adds **billing and
+  policy** (Billing supplies the duplicate-charge evidence; Policy is the only
+  thing that can authorize the refund). The classifier stays model-based and
+  routing stays a pure function; no new model call.
+- Reviewed the other overrides rather than adding agents to make a score
+  pass: `refund_request` and `cancellation` were already correct and remain
+  covered by tests. `failed_payment` does **not** get Policy — its scenario
+  is billing-only `reply_and_monitor`, and no policy decision is needed to
+  say a retry is pending. `billing_question` was left alone (see below).
+- New `src/lib/orchestrator/responseGuard.ts`: the Response prompt now
+  carries an explicit "Authorized commitments" line derived from
+  `resolution.action` (a refund IS authorized only for `refund_customer`),
+  and `customerResponseSchemaFor(action)` extends `CustomerResponseSchema`
+  with a `superRefine` that rejects a reply whose subject/body/nextSteps
+  promise a refund under any other action. A rejection is an ordinary
+  validation failure: `runStructuredStep` retries once with the reason fed
+  back, and a persistent violation degrades to the existing safe fallback
+  reply (which mentions no refund) with the step flagged `agent_failed` —
+  an over-promise is never persisted. The resolution is the persisted
+  authority; the Response agent cannot widen it.
+- No schema shape change, no new persisted field, no chain-of-thought.
+  Evaluation expectations are untouched: `duplicate-billing` still expects
+  billing + policy + response, `duplicate-charge-policy`, `refund_customer`.
+
+**Rationale:** Routing for an intent whose outcome moves money must not hinge
+on a model remembering to list a domain — the same principle behind the
+existing Risk/Policy overrides. For the Response contract, a prompt is an
+instruction, not a guarantee; (b) relies on the same model self-reporting
+honestly, while (c) checks the actual text in code against a rule the
+pipeline (not the model) decided. (c) also needed no schema/fixture churn.
+
+**Tradeoffs:** The refund-promise detector is a conservative sentence-level
+heuristic (refund term + commitment verb + no negation/conditional), not
+language understanding. It errs toward flagging: a false positive costs one
+retry and at worst the generic fallback reply, which is safe and visible to
+the operator; a false negative is what it exists to prevent. It only covers
+*refund* promises, not every possible over-commitment (e.g. a promised
+credit under another name). Forcing Billing+Policy on every
+`duplicate_charge` also means Policy runs even when the ticket text is
+ambiguous — acceptable, since Policy can return `requires_review`.
+
+**Still open (not changed here):** the `multi-domain` scenario
+(`billing_question` intent, expects Policy and `refund_customer`) still
+relies on the classifier including `"policy"`; forcing Policy for all
+`billing_question` tickets would add an agent to many informational tickets,
+so that was deliberately not done without live evidence. The full 10-scenario
+live run should show whether it matters.
+
+**When we'd reconsider:** If live runs show the heuristic missing real
+promises or over-flagging legitimate replies, or if other intents that lead
+to money movement appear.
