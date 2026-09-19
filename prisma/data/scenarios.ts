@@ -83,12 +83,12 @@ export const SCENARIOS: ScenarioSeed[] = [
     subscription: { status: "active", startedDaysAgo: 220, renewsInDays: 15 },
     invoices: [{ status: "paid", amountCents: 29700, issuedDaysAgo: 15, dueDaysAgo: 15, paidDaysAgo: 15 }],
     transactions: [{ type: "charge", status: "succeeded", amountCents: 29700, occurredDaysAgo: 15, invoiceIndex: 0 }],
-    ticket: { subject: "Can't log in — password reset email never arrives", channel: "email", priority: "medium" },
+    ticket: { subject: "Forgot my password — can't log in", channel: "email", priority: "medium" },
     messages: [
       {
         author: "customer",
         authorName: "Priya Natarajan",
-        body: "I've requested a password reset three times in the last hour but the email never shows up, even in spam. Can you help me get back into our workspace?",
+        body: "I forgot my password and can't log in. Can you help me reset it?",
         sentDaysAgo: 0,
       },
     ],

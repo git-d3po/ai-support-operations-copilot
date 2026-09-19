@@ -1367,3 +1367,85 @@ other agents, apply the same explicit-limit instruction to their prompts (the
 shared constant is already exported). If instruction-following alone proves
 insufficient, consider raising the cap deliberately as its own decision, not
 truncating.
+
+---
+
+## 2026-09-19 — password-reset stays the canonical routine (`auto_resolve`) scenario; the ticket is rewritten, not the expectation
+
+**Context:** The first full live evaluation scored `password-reset` as a
+failure. Investigating it showed the scenario was internally inconsistent
+from the foundation commit: its description ("Standard password reset request
+with no security flags"), notes, `EVALUATION.md` ("Standard case, no
+escalation") and expected outcome (`auto_resolve`, no escalation) all define a
+routine request, but the ticket text described a repeated reset-email
+delivery failure ("requested a password reset three times ... the email never
+shows up, even in spam"). Everything in the design points at auto-resolution:
+the Account Security Policy says password resets are automatic unless the
+account has an open security flag; the Technical Agent's prompt uses "a
+routine password reset with no security flags" as its `auto_resolvable`
+example; `resolveOutcome()` has an explicit rule 7 for it; and it is the only
+scenario that exercises that branch end to end. No document or policy said a
+delivery failure needs Engineering.
+
+**Options considered:** (a) leave the ticket and expectation as they were;
+(b) keep the ticket and redesign the scenario as a technical escalation —
+adding a "known issue" knowledge document and expecting `escalate`;
+(c) keep the design and rewrite the ticket so it is actually routine.
+
+**Decision made:** (c). (b) was drafted and explicitly rejected.
+- `prisma/data/scenarios.ts`: only the password-reset ticket changed
+  (subject "Forgot my password — can't log in"; message "I forgot my password
+  and can't log in. Can you help me reset it?"). Channel, priority, account
+  context, description, notes and the whole expected outcome are unchanged:
+  `password_reset`, technical + response, no policy, no escalation,
+  `auto_resolve`.
+- `prisma/data/productDocs.ts`: a new neutral article, `password-reset-guide`
+  ("Resetting Your Password"), stating only the standard self-service,
+  verified-email reset flow that the Account Security Policy already
+  describes. It exists for grounding and retrieval — without it, keyword
+  retrieval surfaced only unrelated docs for a password ticket (the 2FA doc
+  matches on "reset"). It prescribes no outcome.
+- `scripts/evaluationDryRunFixtures.ts`: only the password-reset entry
+  changed, to a routine finding (`auto_resolvable`, grounded in the new doc)
+  and a routine reply.
+- `tests/unit/passwordResetScenario.test.ts` guards the design: the ticket is
+  a plain reset request, the expectation is unchanged, the doc is neutral and
+  ranks first under the real retrieval, and the fixtures flow through the real
+  Technical agent and `resolveOutcome()` to `auto_resolve`.
+
+**Rationale:** (b) would have been a post-hoc change — made after seeing the
+live model escalate — and would have written that observed behavior into the
+knowledge base: a document telling the agent to escalate this exact case makes
+the "expected" outcome true by construction, so a pass would measure
+document-following, not judgment. It would also have duplicated the existing
+`technical-escalation` coverage (same flags, same rule, same team), removed
+the suite's only `auto_resolve` scenario, invented facts not in the synthetic
+product (a ticket number, a cause, "support cannot resend the email"), and
+contradicted the seeded background password-reset tickets, whose agents
+answer a missing reset email by triggering a fresh one. The argument that the
+system "cannot actually reset a password" was also wrong: no code executes
+any resolution action — `refund_customer` included; the copilot proposes and
+the operator acts (PRODUCT_SPEC). The defect was the ticket contradicting its
+own specification, so the ticket is what changed. This does not change the
+live-run record: the earlier `password-reset` results in `eval.db` were
+produced against the old ticket text and are not comparable to a run on the
+new one.
+
+**Tradeoffs:** The trigger for revisiting the ticket was still a live
+failure, but the justification is independent of it: the design artifacts
+above define the case, and the ticket was the outlier. The new ticket no
+longer probes how the Technical Agent handles an undocumented issue.
+
+**Open (not addressed here):** a separate scenario for a reset-email delivery
+failure, or more generally an undocumented technical issue, may be worth
+adding later. It would probe a real gap — the Technical prompt says such a
+case "needs manual investigation", but no flag or resolution maps to that
+(the live model chose `requires_escalation`, contradicting the prompt's own
+"clear evidence of a product defect" condition) — and it needs a product
+decision on what action represents "investigate". It is outside this change.
+The Technical agent also cannot verify "no security flags", since it is not
+given the account's risk data.
+
+**When we'd reconsider:** If the routine scenario proves flaky against a live
+model even with a grounded, routine ticket, that is a finding about the
+`auto_resolvable` prompt contract, to be handled as its own decision.

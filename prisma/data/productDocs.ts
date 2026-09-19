@@ -10,7 +10,9 @@ export interface ProductDocSeed {
  * Synthetic product documentation / knowledge-base articles. The Technical
  * Agent grounds its diagnoses in these — in particular
  * `known-issue-automation-timeout`, which several curated evaluation
- * tickets reference (see prisma/data/scenarios.ts).
+ * tickets reference (see prisma/data/scenarios.ts). `password-reset-guide`
+ * is neutral grounding for the routine password-reset scenario; it states the
+ * standard flow only and prescribes no evaluation outcome.
  */
 export const PRODUCT_DOCS: ProductDocSeed[] = [
   {
@@ -105,5 +107,25 @@ Two-factor authentication can be enabled per-user under Settings → Security.
 Account admins can require 2FA for all workspace members. Losing access to
 a 2FA device requires identity verification through a secondary channel
 before it can be reset — this cannot be done from a support ticket alone.`,
+  },
+  {
+    slug: "password-reset-guide",
+    title: "Resetting Your Password",
+    product: "core",
+    version: "1.0",
+    body: `# Resetting Your Password
+
+Password resets are self-service. To reset your password, choose the
+password reset option on the sign-in page and enter the email address on
+your Halcyon account. Halcyon sends a password reset link to that verified
+address; follow the link to choose a new password, then sign in with it.
+
+Password reset requests are handled automatically through this
+verified-email flow and do not require human review unless the account has
+an open security flag.
+
+This guide covers password resets only. Losing access to a two-factor
+authentication device is handled separately — see "Setting Up Two-Factor
+Authentication".`,
   },
 ];
