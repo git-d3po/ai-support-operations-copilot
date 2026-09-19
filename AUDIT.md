@@ -281,3 +281,67 @@ live-model evaluation. Every property requested for audit holds by
 inspection and by this dry run; the only remaining gap (a real
 `ANTHROPIC_API_KEY`) is a credential the user must explicitly provide,
 per standing project policy — not an engineering readiness gap.
+
+---
+
+## Audit #5 — Pre-flight audit for the first real credential (2026-09-18)
+
+Requested explicitly, before the user provides any real
+`ANTHROPIC_API_KEY`: re-verify (by reading the code directly, not relying
+on Audit #4's conclusions) that credential handling, provider-selection
+gating, and live/simulated labeling are all still correct, and compute
+what a real run will actually cost and call. No API key was requested,
+read, or used; the evaluation was not run. Scope:
+`src/lib/ai/providers/**`, `src/lib/orchestrator/modelRouting.ts`,
+`scripts/runEvaluation.ts`, `next.config.ts`, `.gitignore`/`.env.example`,
+plus the Anthropic SDK's own header/error-handling internals.
+
+### What was re-verified (all held up; no regressions since Audit #4)
+
+- `ANTHROPIC_API_KEY` is read in exactly one place
+  (`src/lib/ai/providers/anthropic.ts`), lazily, never logged or returned.
+  Traced the SDK's own internals to confirm a thrown `APIError` captures
+  only *response* headers, never the outbound `X-Api-Key` request header —
+  there's no path for a logged/thrown error to leak the key.
+- Mock-provider selection is gated by exactly one condition
+  (`USE_MOCK_MODEL_PROVIDER === "true"`) checked in exactly one place
+  (`registry.ts`'s `createProvider()`), and that variable is set in
+  exactly one file (`playwright.config.ts`, e2e-only) — confirmed by a
+  repo-wide grep, not assumed from memory. `scripts/runEvaluation.ts`
+  never sets it and never calls `registerProvider()`, so a real `npm run
+  eval` cannot accidentally run against a fixture.
+- `isSimulated` is derived from `ModelProvider.key` (a hardcoded literal
+  per provider class), not from any config a caller could override — a
+  live run and a simulated run cannot be mislabeled as each other.
+- No `NEXT_PUBLIC_`-prefixed variable exists anywhere in the codebase and
+  `next.config.ts` has no `env:` block, so there's no path for the key to
+  reach a client bundle. `.gitignore`'s `.env*` (with `!.env.example`)
+  correctly ignores a real `.env`; `git ls-files` and `git status
+  --ignored` confirm only the empty-valued `.env.example` is tracked.
+- `runEvaluationSuite()` calls the identical `analyzeTicket()` the "Run AI
+  analysis" Server Action calls (`src/app/tickets/[id]/actions.ts`) — one
+  code path, re-confirmed directly rather than by inference.
+
+### New analysis: expected call count and cost
+
+Computed from `prisma/data/scenarios.ts`'s `expectedAgents` per scenario
+and `modelRouting.ts`'s pricing table: **~35 model calls and an estimated
+$0.10–$0.30** for a full 10-scenario real run. Full breakdown and caveats
+now live in EVALUATION.md ("Pre-flight: expected call count and cost for
+a real run") rather than duplicated here — labeled throughout as an
+estimate derived from prompt structure, not a measured figure.
+
+### Outcome
+
+No P0/P1 issues found — everything requested for re-verification held up
+under direct inspection, so no code changes were made this cycle. One
+open, deliberately-not-decided question was surfaced for the user: whether
+the first real run should be a single smoke-test scenario (cheaply
+catches an auth, schema-compliance, or latency/cost surprise before
+spending on all 10) or all 10 scenarios immediately (one step, at the
+cost of risking a wasted full run on an unanticipated first-call issue) —
+left to the user, not decided here.
+
+**Readiness assessment: READY** for a controlled first live-model
+evaluation, pending the user providing `ANTHROPIC_API_KEY` and explicitly
+authorizing the run.

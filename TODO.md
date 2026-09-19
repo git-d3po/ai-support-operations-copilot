@@ -4,7 +4,7 @@ Backlog for work explicitly deferred, plus P2 findings from AUDIT.md.
 Phase 2 (real orchestration end to end) is done — see ARCHITECTURE.md and
 DECISIONS.md. This is what's left.
 
-## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5, Audit #4)
+## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5, Audit #4, Audit #5)
 
 - **Run a real evaluation pass.** `npm run eval` exists, is tested for
   safety, and refuses to run without a real `ANTHROPIC_API_KEY` (see
@@ -16,7 +16,15 @@ DECISIONS.md. This is what's left.
   for this — `npm run eval:dry-run` validated the full pipeline end to
   end (9/10 correct scenarios passed, 1 deliberately-wrong scenario
   correctly failed) against a deterministic fixture, so a real run should
-  need no further plumbing changes.
+  need no further plumbing changes. **Audit #5 is a pre-flight audit done
+  specifically for the moment a real credential is about to be added** —
+  it re-verified credential handling, provider-selection gating, and
+  live/simulated labeling directly against the code (no issues found) and
+  computed what to expect from a real run: ~35 model calls and roughly
+  $0.10–$0.30 for all 10 scenarios (see EVALUATION.md, "Pre-flight:
+  expected call count and cost for a real run" — labeled an estimate, not
+  a measured figure). Still open, deliberately left to the user: whether
+  the first real run should be one smoke-test scenario or all 10 at once.
 
 ## AI Operations — polish, once there's more real usage data to show
 

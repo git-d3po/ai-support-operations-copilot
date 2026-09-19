@@ -124,6 +124,33 @@ only in its own unit test. `known-technical-issue`'s failure notes
 correctly identify all three mismatches (intent, routing, resolution),
 exactly as the deliberately-wrong fixture was designed to produce.
 
+## Pre-flight: expected call count and cost for a real run (estimate, not measured)
+
+Before the first real run, a pre-flight audit (AUDIT.md, Audit #5) computed
+what to expect from the actual pipeline code and `modelRouting.ts`'s
+pricing table, without making any live call:
+
+- **Expected calls**: 35 total for all 10 scenarios (1 classifier call per
+  scenario + 1 call per agent in that scenario's `expectedAgents`) —
+  assuming the real classifier's output matches each scenario's designed
+  routing. A real model's classification can legitimately diverge from
+  that (the same `selectAgents()` override rules that route fixture
+  scenarios also apply to real classifier output), so the actual count
+  could differ. The structural ceiling is 6 calls/ticket (5 agents +
+  classifier, since agent selection is a set) × 2 attempts (the retry
+  built into `callWithStructuredRetry`, `src/lib/ai/parse.ts`) × 10
+  tickets = 120 — a deliberately conservative worst case, not a realistic
+  expectation.
+- **Estimated cost**: roughly **$0.10–$0.15** for the nominal 35-call run
+  (~$0.02 across the Haiku-routed classifier/billing/policy calls, ~$0.09
+  across the Sonnet-routed technical/risk/response calls), with a generous
+  allowance up to **~$0.30** for real-world prompt/response variance or
+  retries. This is derived from reading actual prompt-building code and
+  `modelRouting.ts`'s per-token pricing, not from a tokenizer run against
+  real output — treat it as a rough estimate to sanity-check an actual
+  run against, not a measured figure. Once a real run happens, its
+  persisted `AgentInvocation.estimatedCostUsd` values are the real number.
+
 ## Running the suite for real
 
 ```bash
