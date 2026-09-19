@@ -567,3 +567,310 @@ findings) — expected and tracked, not a hidden gap.
 
 **When we'd reconsider:** At the start of the dedicated UI-implementation
 phase (see TODO.md).
+
+---
+
+## 2026-09-18 — Response agent runs after resolution, not as a uniform pipeline step
+
+**Context:** Implementing Phase 2's real agents surfaced a genuine
+sequencing requirement the foundation-phase skeleton didn't have yet: the
+product spec says the Response agent's draft "should be grounded in the
+resolution produced by the orchestration pipeline" and must not
+independently invent a policy or resolution decision. The foundation-phase
+orchestrator ran every selected agent — including Response — in one
+uniform loop *before* `resolveOutcome()` even existed, because Response
+was a stub with nothing to ground itself in yet.
+
+**Options considered:** (a) Keep Response in the uniform per-agent loop
+and have it re-derive an approximation of the resolution from the other
+agents' findings itself; (b) split the pipeline so investigative agents
+(billing/policy/technical/risk) run first, `resolveOutcome()` computes a
+real decision, and only then does Response run, with that decision already
+in its context.
+
+**Decision made:** (b). `orchestrator.ts` filters `selectAgents()`'s
+output into investigative keys vs. Response, runs the investigative agents
+first accumulating `priorFindings`, calls `resolveOutcome()`, and only then
+invokes Response with `resolution`/`escalation` populated on its
+`AgentContext`. `selectAgents()` itself did not change — it still decides
+*whether* Response runs, just not *when* relative to resolution.
+
+**Rationale:** Option (a) would have made "the response should be grounded
+in the resolution" true only by accident (two independent computations
+that happen to usually agree), not by construction — and would have
+doubled the aggregation logic. Option (b) makes the guarantee structural:
+Response literally cannot draft a reply without the actual resolution
+object in hand, and `orchestrator.test.ts` has a dedicated test that fails
+if Response's prompt doesn't already contain `action=refund_customer`
+before it responds.
+
+**Tradeoffs:** `AgentContext` now has two fields (`resolution`,
+`escalation`) that are `undefined` for four of the five agents and only
+populated for Response — a small, honestly-documented asymmetry in an
+otherwise-uniform interface, rather than a second, parallel context type
+for one agent.
+
+**When we'd reconsider:** If a future agent also needs "the resolution so
+far" before it runs (unlikely given the current five-agent roster), this
+pattern generalizes directly — no rework needed.
+
+---
+
+## 2026-09-18 — Policy and Risk agents extend AgentFinding with their own structured decision
+
+**Context:** The product spec's `PolicyDecisionSchema` (applicable policy,
+decision, justification, conditions) and the Risk agent's escalation
+recommendation are each a genuinely distinct structured artifact beyond
+the generic `AgentFinding` envelope (summary/evidence/confidence/flags)
+every agent shares — but `resolveOutcome()` needs to read them in a
+type-safe way, and the UI needs to render them.
+
+**Options considered:** (a) Encode the decision as strings inside
+`AgentFinding.flags` (e.g. `"policy_decision:approve"`); (b) a separate,
+disconnected schema/table just for policy decisions, joined by
+orchestration-run id; (c) `PolicyAgentFindingSchema` /
+`RiskAgentFindingSchema` as Zod `.extend()`s of `AgentFindingSchema`,
+stored in the same `AgentInvocation.finding` JSON column every agent uses.
+
+**Decision made:** (c).
+
+**Rationale:** (a) is stringly-typed and exactly the kind of "structured
+data smuggled through an unstructured field" this project's whole
+structured-output principle exists to avoid. (b) adds a table and a join
+for two extra fields, with no benefit — the finding already lives in
+`AgentInvocation.finding`, and Policy/Risk's extra fields are additional
+facts about that same finding, not a separate entity. (c) required zero
+schema/database changes (the JSON column already stores "whatever's
+valid"), keeps every agent's raw output going through the identical
+`runStructuredStep()` → validate → persist path, and lets the UI render
+every agent uniformly while still reading the extra fields when present
+(`isPolicyFinding()`/`isRiskFinding()` type guards in `schemas.ts`).
+
+**Tradeoffs:** `AgentFinding.agentKey` is typed as the full `AgentKey`
+enum (not literal-narrowed per variant), so a plain `finding.agentKey ===
+"policy"` check does not narrow the `AnyAgentFinding` union for
+TypeScript — anyone touching this code needs to use the exported type
+guards instead of the "obvious" check. Documented in ARCHITECTURE.md
+specifically so this doesn't get rediscovered as a confusing compiler
+error later.
+
+**When we'd reconsider:** If a third agent needs its own extended shape,
+the same `.extend()` pattern applies directly — no reason to reconsider
+this approach at that point, just repeat it.
+
+---
+
+## 2026-09-18 — Deterministic evidence pre-computation for mechanically-checkable facts
+
+**Context:** Several policy decisions hinge on exact facts — is a charge
+within a 14-day window, are two transactions within 48 hours of each
+other, same amount, same invoice. Models are a well-known weak point for
+precise arithmetic and date math; getting "day 13 vs. day 15" wrong would
+directly flip a refund decision.
+
+**Options considered:** (a) Give the model the raw transaction/invoice
+records and ask it to compute date differences and duplicate-matching
+itself; (b) compute these specific, exactly-defined facts in TypeScript
+and hand the model the *result* (e.g. "days since most recent charge: 5",
+"confirmed duplicate: yes, 2 pairs") alongside the raw records as
+supporting evidence.
+
+**Decision made:** (b) — `src/lib/orchestrator/evidence.ts`:
+`detectDuplicateCharges()`, `daysSince()`, `mostRecentSucceededCharge()`,
+etc. Billing, Policy, and Risk agents' prompts include both the raw
+records (for context/citation) and these pre-computed facts (for the
+specific quantitative claims their decision depends on).
+
+**Rationale:** This directly serves "the data supports the decision" (the
+product's own quality bar, not just a nice-to-have): the exact,
+mechanically-checkable part of the reasoning is guaranteed correct by
+code, and the model's job narrows to the genuinely judgment-based part
+(does this refund story hold up, does this pattern look like fraud) —
+which is what a model is actually good at and what the product is meant
+to demonstrate. It also makes these specific facts unit-testable in
+isolation (`evidence.test.ts`) independent of any model behavior.
+
+**Tradeoffs:** More upfront code than "just give the model everything and
+ask" — a deliberate area was carved out and hand-written rather than
+delegated. If policy conditions get more numerous or complex, more
+pre-computation functions will need to be added by hand rather than
+"letting the model figure it out."
+
+**When we'd reconsider:** If a policy condition is genuinely fuzzy (not a
+sharp threshold), pre-computation isn't the right tool — that's exactly
+the kind of judgment call left to the model already.
+
+---
+
+## 2026-09-18 — `resolveOutcome()` stays a deterministic function, not a model call
+
+**Context:** With Policy and Risk agents now producing real structured
+decisions, it would be possible to have a sixth "resolution" model call
+that reads all the findings and decides the final action — mirroring how
+classification and each agent are model calls.
+
+**Options considered:** (a) A model call that synthesizes all findings
+into a final resolution; (b) a deterministic, rule-based function reading
+the already-structured findings (`policyDecision.decision`, Risk's
+`escalationRecommended`, Technical's flags) and applying an explicit
+priority order.
+
+**Decision made:** (b) — `src/lib/orchestrator/resolve.ts`, a pure
+function with 12 explicit, ordered rules (see its own comments and
+`resolve.test.ts`'s 15 tests, one per branch).
+
+**Rationale:** By the time `resolveOutcome()` runs, every genuinely
+judgment-based question has already been answered by a specialist agent
+in structured form — "does this ticket warrant escalation" (Risk), "is
+this refund approved" (Policy), "is there a known-issue workaround"
+(Technical). Combining already-structured decisions into a final action is
+a priority/routing problem, not a reasoning problem, and a rule-based
+function is deterministic, instantly explainable ("why did it escalate? —
+rule 2, Risk recommended it"), and directly unit-testable across every
+branch — properties a seventh model call would trade away for no
+corresponding benefit. This mirrors the exact argument already made for
+`selectAgents()` staying deterministic (see "Why agents are dynamically
+selected," above).
+
+**Tradeoffs:** The rule order and specific flag vocabulary
+(`KNOWN_AGENT_FLAGS` in `schemas.ts`) is hand-authored business logic that
+has to be kept in sync with what each agent's prompt actually asks it to
+produce — a new agent flag that `resolveOutcome()` doesn't have a rule for
+silently falls through to the generic confidence-based default rather than
+being wrong loudly.
+
+**When we'd reconsider:** If resolution logic needs true natural-language
+judgment beyond combining pre-existing structured decisions (hard to
+picture given the current five-agent design, but not impossible for a
+future domain).
+
+---
+
+## 2026-09-18 — E2E coverage for the AI analysis flow uses a fixture model provider
+
+**Context:** `runAnalysis.spec.ts` needs to exercise the real "Run AI
+analysis" journey end to end. There is no `ANTHROPIC_API_KEY` configured
+in this environment, and — separately — the user has an explicit standing
+instruction that no automated test may ever use a real model credential.
+Even setting that aside, a live call would make the suite non-deterministic
+and billed per run, contradicting CLAUDE.md's own definition of the e2e
+suite as "the deterministic regression layer."
+
+**Options considered:** (a) Skip e2e coverage of the analysis flow
+entirely and only test the graceful-error path (which needs no live call);
+(b) register a `MockProvider` from a Next.js `instrumentation.ts`
+server-startup hook, gated on an env var only `playwright.config.ts` sets;
+(c) same idea, but the env-var check lives inside
+`registry.ts`'s `createProvider()` itself rather than an external hook.
+
+**Decision made:** (c), after (b) was tried first and demonstrably failed.
+
+**What happened with (b):** `instrumentation.ts`'s `register()` really was
+called at server startup (confirmed via logging) and really did call
+`registerProvider("anthropic", mockInstance)` — but the Server Action that
+later called `getProvider("anthropic")` still hit the real
+`AnthropicProvider` and threw the missing-API-key error. Next.js's
+per-route bundling gives the instrumentation hook and a Server Action
+separate bundled copies of `registry.ts`, each with its own module-level
+`instances` Map — a registration made in one bundle's copy doesn't reach
+another bundle's copy, even though both are "the same file" in source.
+This was diagnosed by adding temporary logging and manually driving the
+built app in the browser pane before concluding the mechanism was
+unreliable, not the config.
+
+**Rationale for (c):** `process.env` is process-wide, not bundle-scoped —
+reading `USE_MOCK_MODEL_PROVIDER` inside `createProvider()` itself gives
+the same answer no matter which bundle's copy of the module actually runs,
+because the decision is made locally at the moment a provider is actually
+requested, not communicated across an external registration step. This
+keeps the override auditable in one place (`registry.ts`), narrow (checked
+only for the `"anthropic"` key), and inert everywhere except when
+Playwright's `webServer.env` sets the flag.
+
+**Tradeoffs:** `registry.ts` (otherwise pure production code with no
+awareness of tests) now has one explicit, narrow, clearly-commented
+test-fixture branch. This is a deliberate, documented exception, not
+scope creep — precedented by how many real systems gate a "test mode" at
+the exact point a live integration would otherwise fire.
+
+**When we'd reconsider:** If Next.js's instrumentation hook is later
+documented to share module state reliably with Server Actions (or if the
+app moves to a standalone Node backend where this bundling concern doesn't
+apply), the check could move back out of `registry.ts` — not urgent, since
+the current approach works and is well-contained.
+
+---
+
+## 2026-09-18 — The evaluation runner refuses to run without a real, user-provided API key
+
+**Context:** EVALUATION.md and the product spec both require that
+evaluation "measures actual behavior" and never displays an invented
+result. Separately, the user gave an explicit standing instruction: no
+real API key is ever used without being asked first, in this project.
+
+**Options considered:** (a) Let `npm run eval` run against whatever
+provider `registry.ts` resolves, including silently falling back to a
+mock if no key is present; (b) have the runner itself refuse to start at
+all when `ANTHROPIC_API_KEY` is unset, with a clear message, rather than
+falling back to anything.
+
+**Decision made:** (b) — `scripts/runEvaluation.ts` checks for
+`ANTHROPIC_API_KEY` before calling `runEvaluationSuite()` at all and exits
+with an explanatory error if it's missing. `runEvaluationSuite()` itself
+calls the real orchestrator (`analyzeTicket()`) with no provider override
+— it was never given a code path to run against `MockProvider` in the
+first place.
+
+**Rationale:** Option (a)'s "fall back to a mock" would have silently
+produced ten "passing" evaluation results that only reflect a hand-written
+test fixture, not the product's actual AI behavior — precisely the
+"invented performance metric" the project is built to avoid, and exactly
+what the user's standing instruction is meant to prevent. Refusing loudly
+is safer than succeeding quietly with the wrong thing. Because no key is
+configured in this project's development environment, the suite has not
+been run for real; the Evaluations page still honestly shows "not run"
+rather than any score.
+
+**Tradeoffs:** None really — this is a pure safety gate with no
+functional downside once a real key is actually provided.
+
+**When we'd reconsider:** Never, for the credential-safety part. If the
+project later wants a distinct "dry run against mock, for pipeline-wiring
+verification only" mode, that would need to be a clearly-labeled separate
+command that never writes to the same `EvaluationResult` table real scores
+live in — not a change to this command's behavior.
+
+---
+
+## 2026-09-18 — Classification is tracked as a pipeline step, not folded into an existing agent
+
+**Context:** Classification makes a real model call and has real
+cost/latency/tokens worth tracking in AI Operations, but it isn't one of
+the 5 specialist agents in `AGENT_KEYS` — it runs before agent selection
+even happens.
+
+**Options considered:** (a) Don't persist classification's own metrics at
+all — only track the 5 agents; (b) attribute classification's cost to
+whichever agent happened to run first; (c) treat `"classifier"` as its own
+`PipelineStepKey`, with its own `modelRouting.ts` entry and its own
+`AgentInvocation` row (reusing that table rather than adding a new one).
+
+**Decision made:** (c).
+
+**Rationale:** Classification is a real, billable model call — omitting it
+(a) would understate AI Operations' cost/latency numbers, and attributing
+it to another agent (b) would misattribute cost to work that agent didn't
+do. `AgentInvocation.agentKey` is a plain string column already (not a DB
+enum), so storing `"classifier"` there required zero schema changes — this
+is the "smallest necessary change" the task explicitly allowed for when a
+concrete requirement (accurate cost tracking) made the existing shape
+insufficient.
+
+**Tradeoffs:** `AgentInvocation` now holds rows for something that isn't
+technically an "agent" by the product's own vocabulary — mitigated by
+clear labeling in the UI ("Classification" vs. e.g. "Billing Agent") and
+in code comments (`PipelineStepKey = AgentKey | "classifier"`).
+
+**When we'd reconsider:** If more non-agent pipeline steps that call
+models are added later, the same `PipelineStepKey` pattern extends
+directly.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import type { ResolutionDecision } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,11 @@ const PRIORITY_LABEL: Record<string, string> = {
 
 export default async function InboxPage() {
   const tickets = await db.ticket.findMany({
-    include: { customer: true, evaluationCase: true },
+    include: {
+      customer: true,
+      evaluationCase: true,
+      orchestrationRuns: { orderBy: { startedAt: "desc" }, take: 1 },
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
@@ -30,7 +35,8 @@ export default async function InboxPage() {
     <div className="p-6">
       <h1 className="text-lg font-semibold">Inbox</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        {tickets.length} tickets. Curated evaluation tickets are marked with a scenario badge.
+        {tickets.length} tickets. The AI column reflects each ticket&apos;s actual latest orchestration
+        run, not a placeholder.
       </p>
 
       <div className="mt-4 overflow-x-auto">
@@ -65,20 +71,51 @@ export default async function InboxPage() {
                 <td className="py-2 pr-4">{PRIORITY_LABEL[ticket.priority] ?? ticket.priority}</td>
                 <td className="py-2 pr-4 text-zinc-500">{ticket.channel}</td>
                 <td className="py-2 pr-4 text-zinc-500">{formatDateTime(ticket.createdAt)}</td>
-                <td className="py-2 pr-4 text-zinc-400">
-                  {ticket.evaluationCase ? (
-                    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                      eval: {ticket.evaluationCase.scenarioKey}
-                    </span>
-                  ) : (
-                    "not run"
-                  )}
+                <td className="py-2 pr-4">
+                  <AiIndicator
+                    evaluationScenarioKey={ticket.evaluationCase?.scenarioKey ?? null}
+                    latestRun={ticket.orchestrationRuns[0] ?? null}
+                  />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function AiIndicator({
+  evaluationScenarioKey,
+  latestRun,
+}: {
+  evaluationScenarioKey: string | null;
+  latestRun: { status: string; escalation: unknown; resolution: unknown } | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {evaluationScenarioKey && (
+        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+          eval: {evaluationScenarioKey}
+        </span>
+      )}
+      {!latestRun && <span className="text-xs text-zinc-400">not analyzed</span>}
+      {latestRun?.status === "failed" && (
+        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
+          analysis failed
+        </span>
+      )}
+      {latestRun?.status === "completed" && latestRun.escalation != null && (
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          escalated
+        </span>
+      )}
+      {latestRun?.status === "completed" && latestRun.escalation == null && (
+        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+          {(latestRun.resolution as ResolutionDecision | null)?.action ?? "resolved"}
+        </span>
+      )}
     </div>
   );
 }

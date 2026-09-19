@@ -199,6 +199,12 @@ model OrchestrationRun {
   escalation     Json? // EscalationDecision | null
   response       Json? // CustomerResponse
 
+  // Set only when status = "failed" for a reason that aborted the whole
+  // run (e.g. no ANTHROPIC_API_KEY configured) rather than one agent's
+  // output failing to parse — that case is per-AgentInvocation.errorMessage
+  // instead, since the run itself still completes.
+  errorMessage String?
+
   agentInvocations AgentInvocation[]
 
   @@index([ticketId])

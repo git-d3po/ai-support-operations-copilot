@@ -98,8 +98,30 @@ export const AgentFindingSchema = z.object({
 });
 export type AgentFinding = z.infer<typeof AgentFindingSchema>;
 
+/**
+ * Controlled flag vocabulary `resolveOutcome()` actually reads (see
+ * resolve.ts). Flags outside this list are allowed (agents can note
+ * something informational) but only these drive resolution logic — this
+ * list is the contract between agent prompts and resolution, not an
+ * enforced enum, so it can grow without a schema migration.
+ */
+export const KNOWN_AGENT_FLAGS = {
+  AGENT_FAILED: "agent_failed",
+  DUPLICATE_CHARGE_CONFIRMED: "duplicate_charge_confirmed",
+  PAYMENT_FAILED_AWAITING_CUSTOMER_ACTION: "payment_failed_awaiting_customer_action",
+  NO_BILLING_ISSUE_FOUND: "no_billing_issue_found",
+  KNOWN_ISSUE_WORKAROUND_AVAILABLE: "known_issue_workaround_available",
+  KNOWN_ISSUE_WORKAROUND_ALREADY_TRIED: "known_issue_workaround_already_tried",
+  REQUIRES_ESCALATION: "requires_escalation",
+  AUTO_RESOLVABLE: "auto_resolvable",
+} as const;
+
 // ---------------------------------------------------------------------------
-// Policy Agent's specific decision artifact (in addition to its AgentFinding)
+// Policy Agent — extends AgentFinding with its required decision artifact.
+// A dedicated schema (rather than stuffing this into AgentFinding.flags as
+// strings) because "which policy, what decision, which conditions" is
+// exactly the structured, citable artifact the product spec calls for —
+// see DECISIONS.md ("Policy and Risk agents extend AgentFinding").
 // ---------------------------------------------------------------------------
 
 export const PolicyDecisionSchema = z.object({
@@ -110,6 +132,48 @@ export const PolicyDecisionSchema = z.object({
   conditionsUnmet: z.array(z.string()).default([]),
 });
 export type PolicyDecision = z.infer<typeof PolicyDecisionSchema>;
+
+export const PolicyAgentFindingSchema = AgentFindingSchema.extend({
+  agentKey: z.literal("policy"),
+  /** Null only when the agent could not reach a decision (e.g. no policy
+   * applies, or it failed) — resolveOutcome treats null as "needs human
+   * review," never as "no policy issue." */
+  policyDecision: PolicyDecisionSchema.nullable(),
+});
+export type PolicyAgentFinding = z.infer<typeof PolicyAgentFindingSchema>;
+
+// ---------------------------------------------------------------------------
+// Risk Agent — extends AgentFinding with its escalation recommendation.
+// ---------------------------------------------------------------------------
+
+export const RiskAgentFindingSchema = AgentFindingSchema.extend({
+  agentKey: z.literal("risk"),
+  escalationRecommended: z.boolean(),
+  escalationReason: z.string().max(400).nullable(),
+  targetTeam: EscalationTeamSchema.nullable(),
+  severity: z.enum(["low", "medium", "high", "critical"]).nullable(),
+});
+export type RiskAgentFinding = z.infer<typeof RiskAgentFindingSchema>;
+
+/** Any specialist agent's finding, as actually stored/rendered — a plain
+ * AgentFinding for Billing/Technical/Response, or one of the two extended
+ * shapes above for Policy/Risk. */
+export type AnyAgentFinding = AgentFinding | PolicyAgentFinding | RiskAgentFinding;
+
+/**
+ * Type guards for narrowing `AnyAgentFinding`. Note: a plain
+ * `finding.agentKey === "policy"` check does NOT narrow the union for
+ * TypeScript here, because `AgentFinding.agentKey` is typed as the full
+ * `AgentKey` enum (not a literal excluding "policy"/"risk") — these guards
+ * narrow on the presence of each extended shape's unique field instead,
+ * which TypeScript can verify structurally.
+ */
+export function isPolicyFinding(finding: AnyAgentFinding): finding is PolicyAgentFinding {
+  return "policyDecision" in finding;
+}
+export function isRiskFinding(finding: AnyAgentFinding): finding is RiskAgentFinding {
+  return "escalationRecommended" in finding;
+}
 
 // ---------------------------------------------------------------------------
 // Resolution & escalation — the orchestrator's final call

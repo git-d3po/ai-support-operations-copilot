@@ -12,8 +12,10 @@ An AI-powered support operations copilot for **Halcyon**, a fictional B2B
 SaaS workflow-automation company. It is a portfolio project, but the rule in
 [PRODUCT_SPEC.md](PRODUCT_SPEC.md) is: **it must not look like one.** Every
 screen, metric, and AI output must trace back to real underlying data and
-real (if currently stubbed) logic — never a hardcoded number standing in for
-intelligence, and never a metric with no query behind it.
+real logic — never a hardcoded number standing in for intelligence, and
+never a metric with no query behind it. As of Phase 2, orchestration is
+genuinely model-backed end to end (see ARCHITECTURE.md); this rule now
+applies with no "currently stubbed" asterisk.
 
 ## Architecture principles
 
@@ -83,17 +85,31 @@ intelligence, and never a metric with no query behind it.
   the model-provider layer. Pure logic — no database, **no network**: the
   provider layer is tested via `MockProvider` and a mocked SDK, never a
   live API call (see `modelClient.test.ts`, `anthropicProvider.test.ts`).
+- **Integration tests (Vitest, `tests/integration/`, `npm run test:integration`)**:
+  touch the real local SQLite database via `src/lib/db.ts` — persistence
+  and the evaluation runner's safety behavior live here, not in
+  `tests/unit/`. Never point these at a real model provider either; the
+  point is testing DB round-trips and graceful-failure paths, both of
+  which are exercised without any live call.
 - **E2E tests (Playwright, `tests/e2e/`)**: the deterministic regression
   layer. Run against a production build (`npm run build && npm run start`)
   and the seeded database, so assertions can reference specific seeded
-  tickets/customers by name. This is the project's actual regression
-  safety net — treat failing e2e tests as blocking, not advisory.
+  tickets/customers by name. The "Run AI analysis" journey uses a fixture
+  model provider (`USE_MOCK_MODEL_PROVIDER=true`, wired in
+  `src/lib/ai/providers/registry.ts` — see DECISIONS.md) so it never makes
+  a live call either. This is the project's actual regression safety net —
+  treat failing e2e tests as blocking, not advisory.
+- **Never use a real model credential in any automated test, at any test
+  level.** If a task seems to need one (e.g. actually running the
+  evaluation suite for real), stop and ask first — see `npm run eval`'s
+  own refusal-without-a-key behavior for the pattern to follow.
 - **Exploratory/visual checks**: use the Claude Code built-in
   browser/computer-use tools for one-off "does this look right" passes
   during development. These are not a substitute for Playwright coverage —
   anything worth checking twice belongs in `tests/e2e/`.
 - Before calling a feature done: `npm run typecheck && npm run lint && npm
-  run test && npm run build`, plus `npm run test:e2e` when UI changed.
+  run test && npm run build`, plus `npm run test:integration` when
+  persistence changed and `npm run test:e2e` when UI changed.
 
 ## AI safety / quality requirements
 

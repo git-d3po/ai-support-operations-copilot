@@ -1,9 +1,13 @@
 import type {
-  AgentFinding,
   AgentKey,
+  AnyAgentFinding,
+  CustomerResponse,
+  EscalationDecision,
+  ResolutionDecision,
   TicketClassification,
 } from "@/lib/ai/schemas";
 import type { ProviderKey } from "@/lib/ai/providers/registry";
+import type { TicketDataContext } from "./context";
 
 /**
  * Everything a specialist agent needs to do its job. Deliberately a plain
@@ -16,10 +20,20 @@ export interface AgentContext {
   classification: TicketClassification;
   ticketSummary: string;
   conversation: { author: string; body: string }[];
-  /** Pre-fetched, agent-relevant account/billing/policy data. Shape is
-   * intentionally loose here (`unknown`) because each agent only needs a
-   * slice of it; agents narrow/validate what they read. */
-  accountContext: unknown;
+  /** Pre-fetched account/billing/knowledge data. Agents read only the
+   * slice they need when building their prompt (see prompts.ts). */
+  accountContext: TicketDataContext;
+  /** Findings from agents that already ran earlier in this pipeline
+   * (billing/policy/technical run before risk; all four run before
+   * response). Lets Risk weigh other agents' evidence, and lets Response
+   * summarize them — without either agent re-deriving them itself. */
+  priorFindings: AnyAgentFinding[];
+  /** Populated only for the Response agent, which runs *after*
+   * resolveOutcome() — see orchestrator.ts and DECISIONS.md ("Response
+   * agent runs after resolution, not as a uniform pipeline step"). Absent
+   * for every other agent. */
+  resolution?: ResolutionDecision;
+  escalation?: EscalationDecision | null;
 }
 
 export interface AgentRunMetrics {
@@ -31,8 +45,11 @@ export interface AgentRunMetrics {
 }
 
 export interface AgentResult {
-  finding: AgentFinding;
+  finding: AnyAgentFinding;
   metrics: AgentRunMetrics;
+  /** Only populated by the Response agent — the actual drafted reply.
+   * Every other agent leaves this undefined. */
+  response?: CustomerResponse;
 }
 
 /**

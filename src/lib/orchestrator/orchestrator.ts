@@ -1,16 +1,18 @@
-import type { CustomerResponse } from "@/lib/ai/schemas";
+import type { AgentKey, AnyAgentFinding, CustomerResponse } from "@/lib/ai/schemas";
 import { AGENT_REGISTRY } from "./agents/registry";
-import { classifyTicket } from "./classify";
-import { resolveOutcome } from "./resolve";
+import { classifyTicket, type ClassifyResult } from "./classify";
+import { resolveOutcome, type ResolveOutcomeResult } from "./resolve";
 import { selectAgents } from "./selectAgents";
 import type { AgentContext, AgentResult } from "./types";
 
 export interface OrchestrationOutcome {
-  classification: Awaited<ReturnType<typeof classifyTicket>>;
-  agentsInvoked: string[];
+  classification: ClassifyResult["classification"];
+  classificationFailed: boolean;
+  classificationMetrics: ClassifyResult["metrics"];
+  agentsInvoked: AgentKey[];
   agentResults: AgentResult[];
-  resolution: ReturnType<typeof resolveOutcome>["resolution"];
-  escalation: ReturnType<typeof resolveOutcome>["escalation"];
+  resolution: ResolveOutcomeResult["resolution"];
+  escalation: ResolveOutcomeResult["escalation"];
   response: CustomerResponse | null;
 }
 
@@ -21,40 +23,63 @@ export interface OrchestrationOutcome {
  *          → Structured findings → Resolution/escalation → Customer response
  *
  * This is a plain function, not a framework-managed agent graph — see
- * DECISIONS.md ("Why we built our own orchestrator"). Persisting the result
- * as an OrchestrationRun (with per-agent AgentInvocation rows) is the
- * caller's responsibility, once the "Run AI analysis" API route exists.
+ * DECISIONS.md ("Why we built our own orchestrator"). It is DB-free and
+ * unit-testable on its own (see orchestrator.test.ts); loading real ticket
+ * data and persisting the result are separate concerns (context.ts,
+ * persist.ts, analyzeTicket.ts).
  *
- * Every agent in AGENT_REGISTRY is currently a stub (see agents/stub.ts) —
- * this function's control flow is real and tested; the reasoning behind
- * each step lands in Phase 2.
+ * One deliberate deviation from "run every selected agent in AGENT_KEYS
+ * order": the Response agent runs LAST, after resolveOutcome(), not as
+ * just another selected agent — because its job is to communicate the
+ * resolution, not to help produce it. See DECISIONS.md ("Response agent
+ * runs after resolution, not as a uniform pipeline step").
  */
 export async function runOrchestration(
   context: Pick<AgentContext, "ticketId" | "ticketSummary" | "conversation" | "accountContext">,
 ): Promise<OrchestrationOutcome> {
-  const classification = await classifyTicket(context);
-  const agentKeys = selectAgents(classification);
+  const { classification, failed: classificationFailed, metrics: classificationMetrics } =
+    await classifyTicket(context);
+
+  const selectedKeys = selectAgents(classification);
+  const investigativeKeys = selectedKeys.filter((key) => key !== "response");
+  const runsResponse = selectedKeys.includes("response");
 
   const agentResults: AgentResult[] = [];
-  for (const key of agentKeys) {
+  for (const key of investigativeKeys) {
     const agent = AGENT_REGISTRY[key];
-    const result = await agent.run({ ...context, classification });
+    const result = await agent.run({
+      ...context,
+      classification,
+      priorFindings: agentResults.map((r) => r.finding),
+    });
     agentResults.push(result);
   }
 
-  const findings = agentResults
-    .map((r) => r.finding)
-    .filter((f) => f.agentKey !== "response");
-  const { resolution, escalation } = resolveOutcome(findings);
+  const findings: AnyAgentFinding[] = agentResults.map((r) => r.finding);
+  const { resolution, escalation } = resolveOutcome(classification, classificationFailed, findings);
+
+  let response: CustomerResponse | null = null;
+  if (runsResponse) {
+    const responseAgent = AGENT_REGISTRY.response;
+    const result = await responseAgent.run({
+      ...context,
+      classification,
+      priorFindings: findings,
+      resolution,
+      escalation,
+    });
+    agentResults.push(result);
+    response = result.response ?? null;
+  }
 
   return {
     classification,
-    agentsInvoked: agentKeys,
+    classificationFailed,
+    classificationMetrics,
+    agentsInvoked: selectedKeys,
     agentResults,
     resolution,
     escalation,
-    // Phase 2: the response agent will return a real CustomerResponse
-    // instead of a stub AgentFinding once it's implemented.
-    response: null,
+    response,
   };
 }

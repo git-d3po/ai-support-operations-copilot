@@ -21,12 +21,15 @@ test("inbox lists the seeded tickets, including curated evaluation scenarios", a
 });
 
 test("opening a curated ticket shows the customer, conversation, and account context", async ({ page }) => {
+  // Uses a different ticket than runAnalysis.spec.ts (which runs AI
+  // analysis on "Charged twice this billing cycle") so this test's
+  // "not yet analyzed" assertion never depends on suite run order.
   await page.goto("/inbox");
-  await page.getByRole("link", { name: /Charged twice this billing cycle/i }).click();
+  await page.getByRole("link", { name: /Refund request — upgraded by mistake/i }).click();
   await expect(page).toHaveURL(/\/tickets\//);
-  await expect(page.getByText("Marcus Webb", { exact: true })).toBeVisible();
-  await expect(page.getByText("Fieldstone Logistics")).toBeVisible();
-  await expect(page.getByText(/duplicate/i).first()).toBeVisible();
+  await expect(page.getByText("Sam Okafor", { exact: true })).toBeVisible();
+  await expect(page.getByText("Vertexcraft", { exact: true })).toBeVisible();
+  await expect(page.getByText(/refund/i).first()).toBeVisible();
   await expect(page.getByText("No AI analysis has been run on this ticket yet.")).toBeVisible();
 });
 

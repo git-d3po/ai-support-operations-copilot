@@ -1,49 +1,29 @@
 # TODO
 
-Backlog for work explicitly deferred out of the foundation phase, plus P2
-findings from AUDIT.md. Organized by what unlocks what — Phase 2 items are
-mostly gated on real model-backed agent logic existing at all.
+Backlog for work explicitly deferred, plus P2 findings from AUDIT.md.
+Phase 2 (real orchestration end to end) is done — see ARCHITECTURE.md and
+DECISIONS.md. This is what's left.
 
-## Phase 2 — Real orchestration (top priority)
+## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5)
 
-The single biggest gap: every orchestrator step is currently a labeled
-stub. In dependency order:
+- **Run a real evaluation pass.** `npm run eval` exists, is tested for
+  safety, and refuses to run without a real `ANTHROPIC_API_KEY` (see
+  EVALUATION.md, DECISIONS.md). No key is configured in this environment,
+  and this project's standing rule is that a real model credential is
+  never used without being asked first. The Evaluations page will keep
+  honestly showing "not run" until the user provides a key and asks for
+  this to happen.
 
-1. **`classifyTicket()`** (`src/lib/orchestrator/classify.ts`) — real
-   Claude call (routed per `modelRouting.ts`), validated through
-   `callWithStructuredRetry(TicketClassificationSchema, ...)`.
-2. **Specialist agents** (`src/lib/orchestrator/agents/*.ts`) — replace
-   `stubAgentResult()` with real prompts per agent, each reading the
-   relevant slice of `context.accountContext` (billing history for
-   Billing, policy docs for Policy, product docs for Technical, risk
-   signals for Risk) and citing evidence from it.
-3. **`resolveOutcome()`** (`src/lib/orchestrator/resolve.ts`) — real
-   aggregation logic from agent findings to a `ResolutionDecision` +
-   optional `EscalationDecision` (currently a placeholder that only checks
-   for a `requires_escalation` flag).
-4. **Response Agent** — return a real `CustomerResponse`, not an
-   `AgentFinding`; thread it through `orchestrator.ts`'s `response` field
-   (currently hardcoded `null`).
-5. **API route** — a `POST /api/tickets/[id]/analyze` (or similar) route
-   handler that calls `runOrchestration()`, persists an `OrchestrationRun`
-   + `AgentInvocation` rows, and returns the result.
-6. **"Run AI analysis" button** on the Ticket Detail page, wired to the
-   route above, replacing the current "not yet implemented" placeholder.
-7. **Evaluation runner** (`npm run eval`, not yet created) — runs
-   `runOrchestration()` against all 10 curated cases, scores against
-   `expectedOutcome`, writes `EvaluationResult` rows. See EVALUATION.md.
+## AI Operations — polish, once there's more real usage data to show
 
-## Phase 2 — AI Operations, once real runs exist
+- Trend over time (e.g. escalation rate this week vs. last) — not
+  meaningful yet with only a handful of runs; revisit once there's more
+  live activity.
+- Surface `AgentInvocation.errorMessage` text somewhere in AI Operations
+  (currently only visible per-run on the Ticket Detail page), so a
+  systemic failure pattern is visible without opening individual tickets.
 
-- Automation/containment rate, escalation rate, per-agent usage, latency,
-  and estimated cost — all computable from `AgentInvocation` /
-  `OrchestrationRun` once Phase 2 items above produce real rows. The page
-  already has the query structure in place for ticket volume; extend it
-  rather than rewrite it.
-- Failure/retry rate — surfaced once `callWithStructuredRetry`'s retry
-  path actually fires in practice.
-
-## Phase 2 — Settings
+## Settings
 
 - Make model routing editable from the Settings UI (currently
   read-only, reflecting `modelRouting.ts` directly). Needs a decision on
@@ -56,20 +36,32 @@ stub. In dependency order:
   a UI component library") once real visual design direction exists.
 - Loading, empty, and error states for every page (AUDIT.md DES-3).
 - Inbox: filtering, search, sort, and pagination (AUDIT.md PM-2, PM-3).
-- Ticket Detail: render the AI orchestration timeline, per-agent findings,
-  confidence, policy references, and model/latency/cost — the schema and
-  data model already support this; only the read side needs building once
-  real `OrchestrationRun` rows exist.
+- De-duplicate the "Run AI analysis" failure message, which currently
+  shows once as the button's own inline error and again in the persisted
+  "Analysis failed" panel after revalidation (AUDIT.md DES-5) — both are
+  correct, just redundant once both are visible.
 - General visual pass: hierarchy, spacing, color usage consistent with "a
   credible modern B2B SaaS app" (PRODUCT_SPEC.md) rather than plain tables.
 
+## Model provider abstraction — possible future extensions
+
+- `ModelProvider.complete()`'s minimal shape (system + messages + max
+  tokens → text + token counts) doesn't yet support provider-specific
+  features like tool use, streaming, or prompt caching. Not needed by any
+  current agent — widen the interface only when a real requirement shows
+  up (see DECISIONS.md, "Model provider abstraction").
+- Adding OpenAI or a local/open-weight model as a second real provider:
+  implement `ModelProvider` in a new file under `src/lib/ai/providers/`,
+  add one `case` to `registry.ts`'s `createProvider()`, point a pipeline
+  step's `modelRouting.ts` entry at it. No agent or orchestrator code
+  should need to change — that's the property to verify when this
+  actually happens.
+
 ## Smaller / cleanup
 
-- `vitest.config.ts` prints a benign Vite ESM/CJS warning (AUDIT.md ENG-5)
-  — revisit if the project ever adopts `"type": "module"`.
-- No integration test yet persists an `OrchestrationRun` end-to-end
-  (AUDIT.md ENG-4) — add once Phase 2 gives it real content worth
-  asserting on.
+- `vitest.config.ts` / `vitest.integration.config.ts` print a benign Vite
+  ESM/CJS warning (AUDIT.md ENG-5) — revisit if the project ever adopts
+  `"type": "module"`.
 - `npm audit` reports vulnerabilities only in `mysql2`/`deepmerge-ts`
   (transitive dev-time dependencies of the Prisma CLI's multi-database
   support — irrelevant since this project only uses the SQLite adapter).
@@ -84,5 +76,3 @@ stub. In dependency order:
   out of scope per PRODUCT_SPEC.md, "Non-goals."
 - Mobile-responsive layout — this is a desktop-first operational tool by
   design.
-- Multi-provider LLM abstraction — see DECISIONS.md, "AI provider:
-  Anthropic SDK."

@@ -1,36 +1,232 @@
-import type {
-  AgentFinding,
-  EscalationDecision,
-  ResolutionDecision,
+import {
+  KNOWN_AGENT_FLAGS,
+  isPolicyFinding,
+  isRiskFinding,
+  type AnyAgentFinding,
+  type EscalationDecision,
+  type ResolutionDecision,
+  type TicketClassification,
 } from "@/lib/ai/schemas";
 
-/**
- * Aggregates specialist findings into a final resolution (and, if
- * warranted, an escalation). Phase 2 replaces this with real aggregation
- * logic — currently a deterministic placeholder so OrchestrationRun rows
- * have a complete, schema-valid shape end to end.
- */
-export function resolveOutcome(findings: AgentFinding[]): {
+export interface ResolveOutcomeResult {
   resolution: ResolutionDecision;
   escalation: EscalationDecision | null;
-} {
-  const escalate = findings.some((f) => f.flags.includes("requires_escalation"));
+}
 
-  const resolution: ResolutionDecision = {
-    action: escalate ? "escalate" : "reply_and_close",
-    summary: "Resolution aggregation not yet implemented (foundation phase).",
-    confidence: 0,
-    requiresHumanReview: true,
-  };
+function average(numbers: number[]): number {
+  if (numbers.length === 0) return 0;
+  return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
+}
 
-  const escalation: EscalationDecision | null = escalate
-    ? {
+/**
+ * Deterministic aggregation from classification + specialist findings to a
+ * final resolution/escalation. Not a model call: this is a routing/priority
+ * decision over already-structured evidence, and keeping it deterministic
+ * is what makes it explainable and directly unit-testable (see CLAUDE.md,
+ * "Explicit orchestrator, not a framework"; DECISIONS.md, "Why agents are
+ * dynamically selected" makes the analogous argument for selectAgents()).
+ *
+ * Priority order (first match wins) mirrors the synthetic Escalation
+ * Policy: a failed classification or a Risk-recommended escalation always
+ * wins; a Policy Agent decision governs refund/deny outcomes; Technical's
+ * flags govern technical resolutions; Billing's flags cover payment-status
+ * replies; anything left over falls through to a confidence-based default.
+ */
+export function resolveOutcome(
+  classification: TicketClassification,
+  classificationFailed: boolean,
+  findings: AnyAgentFinding[],
+): ResolveOutcomeResult {
+  const investigative = findings.filter((f) => f.agentKey !== "response");
+  const policyFinding = investigative.find(isPolicyFinding);
+  const riskFinding = investigative.find(isRiskFinding);
+  const technicalFinding = investigative.find((f) => f.agentKey === "technical");
+  const billingFinding = investigative.find((f) => f.agentKey === "billing");
+  const anyAgentFailed = investigative.some((f) => f.flags.includes(KNOWN_AGENT_FLAGS.AGENT_FAILED));
+
+  // 1. Classification itself failed — nothing downstream can be trusted.
+  if (classificationFailed) {
+    return {
+      resolution: {
+        action: "escalate",
+        summary: "Ticket classification failed after retrying; routing to a human for manual triage.",
+        confidence: 0,
+        requiresHumanReview: true,
+      },
+      escalation: {
         required: true,
-        reason: "One or more agents flagged this ticket for escalation.",
+        reason: "AI classification failed to produce valid output after retrying.",
         targetTeam: "senior_support",
         severity: "medium",
-      }
-    : null;
+      },
+    };
+  }
 
-  return { resolution, escalation };
+  // 2. Risk agent is the authoritative escalation source.
+  if (riskFinding?.escalationRecommended) {
+    return {
+      resolution: {
+        action: "escalate",
+        summary: riskFinding.escalationReason ?? riskFinding.summary,
+        confidence: riskFinding.confidence,
+        requiresHumanReview: true,
+      },
+      escalation: {
+        required: true,
+        reason: riskFinding.escalationReason ?? riskFinding.summary,
+        targetTeam: riskFinding.targetTeam ?? "senior_support",
+        severity: riskFinding.severity ?? "medium",
+      },
+    };
+  }
+
+  // 3. Policy agent ran but couldn't reach or gave an ambiguous decision.
+  if (policyFinding && (policyFinding.policyDecision === null || policyFinding.policyDecision.decision === "requires_review")) {
+    return {
+      resolution: {
+        action: "escalate",
+        summary:
+          policyFinding.policyDecision?.justification ??
+          "Policy agent could not determine which policy applies or whether its conditions are met.",
+        confidence: policyFinding.confidence,
+        requiresHumanReview: true,
+      },
+      escalation: {
+        required: true,
+        reason:
+          policyFinding.policyDecision?.justification ??
+          "Policy applicability is ambiguous and needs Billing Ops review.",
+        targetTeam: "billing_ops",
+        severity: "low",
+      },
+    };
+  }
+
+  // 4. Policy approved the request (e.g. a refund).
+  if (policyFinding?.policyDecision?.decision === "approve") {
+    return {
+      resolution: {
+        action: "refund_customer",
+        summary: policyFinding.policyDecision.justification,
+        confidence: policyFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 5. Policy denied the request.
+  if (policyFinding?.policyDecision?.decision === "deny") {
+    return {
+      resolution: {
+        action: "deny_request",
+        summary: policyFinding.policyDecision.justification,
+        confidence: policyFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 6. Technical: workaround already tried and failed -> escalate to engineering.
+  if (technicalFinding?.flags.includes(KNOWN_AGENT_FLAGS.REQUIRES_ESCALATION)) {
+    return {
+      resolution: {
+        action: "escalate",
+        summary: technicalFinding.summary,
+        confidence: technicalFinding.confidence,
+        requiresHumanReview: true,
+      },
+      escalation: {
+        required: true,
+        reason: technicalFinding.summary,
+        targetTeam: "engineering",
+        severity: "medium",
+      },
+    };
+  }
+
+  // 7. Technical: standard self-service flow, nothing further to do.
+  if (technicalFinding?.flags.includes(KNOWN_AGENT_FLAGS.AUTO_RESOLVABLE)) {
+    return {
+      resolution: {
+        action: "auto_resolve",
+        summary: technicalFinding.summary,
+        confidence: technicalFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 8. Technical: known issue, workaround not yet tried.
+  if (technicalFinding?.flags.includes(KNOWN_AGENT_FLAGS.KNOWN_ISSUE_WORKAROUND_AVAILABLE)) {
+    return {
+      resolution: {
+        action: "reply_and_close",
+        summary: technicalFinding.summary,
+        confidence: technicalFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 9. Billing: payment failed, ball is in the customer's court.
+  if (billingFinding?.flags.includes(KNOWN_AGENT_FLAGS.PAYMENT_FAILED_AWAITING_CUSTOMER_ACTION)) {
+    return {
+      resolution: {
+        action: "reply_and_monitor",
+        summary: billingFinding.summary,
+        confidence: billingFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 10. One or more selected agents outright failed and nothing above
+  // already produced a confident decision — be conservative.
+  if (anyAgentFailed) {
+    return {
+      resolution: {
+        action: "escalate",
+        summary: "One or more specialist agents failed to produce a valid result for this ticket.",
+        confidence: 0,
+        requiresHumanReview: true,
+      },
+      escalation: {
+        required: true,
+        reason: "Agent failure during orchestration.",
+        targetTeam: "senior_support",
+        severity: "low",
+      },
+    };
+  }
+
+  // 11. No specialist agents ran at all — genuinely ambiguous ticket.
+  if (investigative.length === 0) {
+    return {
+      resolution: {
+        action: "reply_and_monitor",
+        summary: "No specific product or account issue detected; requesting clarification from the customer.",
+        confidence: classification.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
+    };
+  }
+
+  // 12. Default: close out based on overall specialist confidence.
+  const overallConfidence = average(investigative.map((f) => f.confidence));
+  const confidenceThreshold = 0.6;
+  return {
+    resolution: {
+      action: overallConfidence >= confidenceThreshold ? "reply_and_close" : "reply_and_monitor",
+      summary: "Resolved based on specialist agent findings.",
+      confidence: overallConfidence,
+      requiresHumanReview: overallConfidence < confidenceThreshold,
+    },
+    escalation: null,
+  };
 }

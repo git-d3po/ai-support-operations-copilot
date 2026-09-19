@@ -73,3 +73,47 @@ run test:e2e` after fixes — all green (40/40 unit tests, 7/7 e2e tests).
 Remaining findings are P2 (polish, explicitly deferred UI work) or
 explicitly out of scope for this phase (PM-1, tracked as the top Phase 2
 priority). No P0s found.
+
+---
+
+## Audit #2 — Phase 2: real orchestration (2026-09-18)
+
+Scope: real classification, real specialist agents, real deterministic
+resolution, persistence, the "Run AI analysis" UI/Server Action, the
+evaluation runner, and the associated test suites. Not in scope: actually
+executing a real evaluation run (no `ANTHROPIC_API_KEY` is configured in
+this environment, and per standing instruction no automated process may
+use a real credential without being asked first) or UI visual polish.
+
+### Senior Product Manager review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| PM-1 (carried over) | "Run AI analysis" now exists end to end. | — | **Resolved.** The top priority from Audit #1 is done: real classification → dynamic routing → real agents → real resolution → real persisted response, verified live in the browser and via `runAnalysis.spec.ts`. |
+| PM-4 | The Inbox's "AI" column only ever showed the curated-scenario badge or a static "not run" string — it never reflected whether a ticket had actually been analyzed, or what the outcome was, even after real analysis started producing results. | P1 | **Fixed** — Inbox now queries each ticket's latest `OrchestrationRun` and shows "not analyzed," "analysis failed," "escalated," or the actual resolution action, alongside the eval badge where applicable. |
+| PM-5 | Evaluation has real infrastructure but no executed results — the Evaluations page still shows "not run" for all 10 scenarios. | Not a finding | Correct and honest given no API key is configured; see EVALUATION.md and DECISIONS.md ("The evaluation runner refuses to run without a real, user-provided API key"). Flagged for the user's decision in the phase report, not treated as a defect. |
+
+### Principal AI Engineer review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| ENG-6 | An `instrumentation.ts`-based approach to injecting the e2e fixture provider silently failed: `register()` ran and logged success, but the Server Action still hit the real `AnthropicProvider` and failed on a missing API key. Root cause: Next.js's per-route bundling gives the instrumentation hook and a Server Action separate module instances of `registry.ts`, so a `registerProvider()` call from one never reached the other. | P1 | **Fixed** — moved the `USE_MOCK_MODEL_PROVIDER` check inside `registry.ts`'s `createProvider()` itself, which is reliably the same code path a request actually resolves a provider through regardless of bundling. Diagnosed by adding temporary logging and manually driving the built app in the browser pane rather than assuming the config was wrong. `instrumentation.ts` was deleted. See DECISIONS.md for the full writeup. |
+| ENG-7 | The initial `runAnalysis.spec.ts` and `smoke.spec.ts` both targeted the same ticket ("Charged twice this billing cycle"), so running analysis in one file's test made the other file's "not yet analyzed" assertion order-dependent and flaky. | P1 | **Fixed** — `smoke.spec.ts` now uses a different ticket ("Refund request — upgraded by mistake") that no other e2e test touches; `playwright.config.ts`'s `webServer.command` also reseeds the database before every fresh server boot so "not yet analyzed" is a safe assumption regardless of prior runs. |
+| ENG-8 | Several `getByText()` e2e locators matched more than one element once real, richer content existed (e.g. "Resolution" matching both a heading and body text containing "resolution decision"). | P2 | **Fixed** — switched to `getByRole("heading", ...)` or `.first()`/`{exact: true}` where genuinely ambiguous. |
+
+### Design Lead review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-5 | On analysis failure, the error appears twice: once as the `RunAnalysisButton`'s own inline message, and again in the persisted "Analysis failed" panel once the page revalidates — both correct, but redundant once both are visible. | P2 | Logged in TODO.md. Not fixed now: the two messages come from genuinely different moments (immediate client feedback vs. the persisted, reload-safe truth) and de-duplicating them cleanly is a small UI decision better made during the UI-polish phase, not a correctness issue. |
+| DES-2 (carried over) | Visual design remains intentionally unstyled. | — | Still expected — see DECISIONS.md. The new Ticket Detail/Operations sections follow the same plain-Tailwind convention as everything else, so the page stays internally consistent even though it isn't polished yet. |
+
+### Outcome
+
+2 P1s found and fixed in Principal AI Engineer review (ENG-6, ENG-7), one
+P1 found and fixed in Product review (PM-4), plus one P2 test-locator
+cleanup (ENG-8). Re-ran the full suite after fixes — `typecheck`, `lint`,
+113 unit tests, 6 integration tests, `build`, and 9/9 e2e tests all green.
+No P0s found. Remaining items are P2 or, in PM-5's case, correctly
+deferred pending a user-provided API key and explicit go-ahead — not a
+defect.

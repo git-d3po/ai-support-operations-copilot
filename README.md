@@ -33,11 +33,15 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run build` / `npm run start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm run test` | Unit tests (Vitest) |
+| `npm run test` | Unit tests (Vitest) — no database, no network |
+| `npm run test:integration` | Integration tests against the real local database |
 | `npm run test:e2e` | Regression tests against a production build (Playwright) |
+| `npm run eval` | Run the 10 curated scenarios against the real orchestrator and score them — requires `ANTHROPIC_API_KEY` |
 | `npm run db:migrate` | Apply Prisma migrations |
 | `npm run db:seed` | Regenerate the deterministic synthetic dataset |
 | `npm run db:studio` | Browse the local database |
 
 Copy `.env.example` to `.env` before running anything that touches the
-database or (once implemented) live AI analysis.
+database. `ANTHROPIC_API_KEY` is only required for live "Run AI analysis"
+in the app and for `npm run eval` — everything else (including all
+automated tests) runs without one.

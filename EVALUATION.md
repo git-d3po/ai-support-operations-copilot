@@ -47,52 +47,84 @@ aggregate `overallScore`, and free-text `notes` — stored per scored run in
 the `EvaluationResult` table, linked to the `EvaluationCase` and the
 specific `OrchestrationRun` that was scored.
 
-## Current status (foundation phase)
+## Current status (Phase 2)
 
 - All 10 scenarios exist, are seeded, and their `expectedOutcome` values are
   schema-validated (`tests/unit/schemas.test.ts`).
-- **Routing accuracy is real today**: `selectAgents()` is fully implemented
-  and unit-tested against all 10 scenarios' `expectedAgents`
-  (`tests/unit/selectAgents.test.ts`) — this is the one dimension that
-  doesn't depend on a live model call.
-- Classification, policy, escalation, and resolution accuracy cannot be
-  scored yet because `classifyTicket()`, the specialist agents, and
-  `resolveOutcome()` are still deterministic placeholders (see TODO.md) —
-  there is no real model output yet to compare against expected outcomes.
-- The Evaluations page (`src/app/evaluations/page.tsx`) lists all 10 cases
-  and their expected outcomes today, live from the database; it correctly
-  shows "not run" for results, because none exist yet.
+- **The full pipeline is genuinely model-backed**: `classifyTicket()`, all
+  5 specialist agents, and `resolveOutcome()` are real (see
+  ARCHITECTURE.md, "Orchestration pipeline") — every dimension below is
+  now measurable, not just routing.
+- **The evaluation runner exists and is tested for safety**
+  (`src/lib/evaluation/runEvaluation.ts`, `scoreOutcome()` in `score.ts`,
+  11 unit tests for the scorer's branch coverage, an integration test
+  proving it never fabricates a result when the pipeline can't actually
+  run) — but **it has not been executed against a real model provider**.
+  There is no `ANTHROPIC_API_KEY` configured in this development
+  environment, and this project's standing rule is that no real model
+  credential is ever used without explicitly asking first (see
+  DECISIONS.md, "The evaluation runner refuses to run without a real,
+  user-provided API key"). The Evaluations page correctly shows "not run"
+  for every scenario as a result — that's accurate, not a placeholder.
+- **`npm run test:e2e`'s `runAnalysis.spec.ts` is not a substitute for
+  this.** It proves the pipeline's wiring, persistence, and UI rendering
+  work end to end using a deterministic fixture provider tuned to one
+  ticket — it demonstrates the mechanism works, not that the AI's
+  judgment is correct. Only a real evaluation run measures that.
 
-## Running the suite (once agents are implemented)
+## Running the suite
 
-The intended flow, once Phase 2 lands real agent logic:
+```bash
+npm run eval
+```
 
-1. For each `EvaluationCase`, run `runOrchestration()` against its ticket.
-2. Persist the result as an `OrchestrationRun` (+ `AgentInvocation` rows).
-3. Score it against `expectedOutcome` on all six dimensions above, writing
-   an `EvaluationResult` row.
-4. Aggregate per-dimension pass rates across all 10 cases; surface on the
-   Evaluations page (already scaffolded to read this table).
+Requires `ANTHROPIC_API_KEY` in `.env` — the script checks for it and
+refuses to run otherwise, rather than silently falling back to anything
+else. When run, for each of the 10 `EvaluationCase` rows it:
 
-This should be exposed as both a script (`npm run eval`, not yet created —
-see TODO.md) and, if useful, a "Run evaluations" action in the Evaluations
-UI itself.
+1. Calls `analyzeTicket(ticketId)` — the exact same function "Run AI
+   analysis" uses — against the real configured provider.
+2. Scores the resulting `OrchestrationOutcome` against `expectedOutcome`
+   via `scoreOutcome()`.
+3. Persists an `EvaluationResult` row (scores + pass/fail against
+   `PASS_THRESHOLD = 0.85`, chosen because escalation/resolution
+   correctness are weighted heavily in `overallScore` — see "Scoring
+   notes").
+4. Prints a per-scenario pass/fail summary and an aggregate count.
+
+The Evaluations page reads these results live once they exist; nothing
+about it needs to change when a real run happens.
 
 ## Scoring notes
+
+Implemented in `src/lib/evaluation/score.ts` (`scoreOutcome()`), unit
+tested branch-by-branch in `score.test.ts`:
 
 - Boolean dimensions (classification/routing/policy/escalation/resolution)
   are exact-match against the expected value — there's no partial credit,
   by design: these are meant to be unambiguous per-scenario checks, not
-  fuzzy quality scores.
-- `evidenceQuality` is the one genuinely subjective dimension. Initial
-  implementation should use a simple rubric (does each citation reference
-  data that actually exists on the ticket/account?) checked programmatically
-  where possible (e.g. "does the cited policy slug exist in the Policy
-  table") before reaching for a model-graded judge.
-- A scenario's `overallScore` should weight escalation and policy
-  correctness above cosmetic classification wording, since an incorrect
-  escalation decision has real operational cost and an incorrect intent
-  label often still produces a workable outcome.
+  fuzzy quality scores. `policyCorrect` is `null` (not applicable, not
+  "wrong") for scenarios where no policy decision was ever expected —
+  `null` results are excluded from `overallScore`'s weighting entirely
+  rather than counted against the case.
+- `evidenceQuality` is the one continuous, non-exact-match dimension: the
+  fraction of investigative findings (excluding the Response agent's own)
+  that have at least one evidence item and didn't fail. This is a simple,
+  programmatic rubric — not a model-graded judge — matching "checked
+  programmatically where possible before reaching for a model-graded
+  judge."
+- `overallScore` is a weighted average: escalation and resolution
+  correctness carry weight 2, classification and routing weight 1, policy
+  weight 1.5 (when applicable), and evidence quality contributes on the
+  same scale as one more weight-1 dimension. This reflects that an
+  incorrect escalation call has real operational cost, while an
+  imperfectly-worded intent label often still produces a workable outcome
+  — exactly the priority `resolveOutcome()` itself follows (Risk's
+  escalation call is checked before Policy's decision, which is checked
+  before Technical's flags).
+- `PASS_THRESHOLD = 0.85` (`runEvaluation.ts`) is intentionally high given
+  those weights — passing means the operationally important dimensions
+  were right, not "mostly fine."
 
 ## Future extensions (not committed to yet)
 
