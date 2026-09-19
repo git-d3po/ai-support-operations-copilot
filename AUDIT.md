@@ -207,3 +207,77 @@ genuinely-grounded citation. 2 P2 observations logged (ENG-11, ENG-12),
 not fixed, both cosmetic/consistency issues with no effect on any
 decision or score. No API key was used or requested at any point in this
 audit.
+
+---
+
+## Audit #4 — Evaluation readiness: end-to-end audit + fixture-provider dry run (2026-09-18)
+
+Requested explicitly: audit the evaluation system end-to-end using the
+deterministic MockProvider/fixture provider (no API key, no live
+evaluation), then actually execute the full 10-scenario suite against a
+fixture provider. Scope: `src/lib/evaluation/**`,
+`src/lib/orchestrator/persist.ts`/`modelClient.ts`, the Evaluations/AI
+Operations UI, and a new dry-run tool built specifically for this audit.
+
+### What's genuinely strong (re-verified by reading + by running)
+
+- All 10 curated scenarios have an unambiguous `expectedOutcome` — quick
+  re-confirmation of Audit #3's finding, unchanged.
+- `runEvaluationSuite()` calls `analyzeTicket()` — the exact same function
+  "Run AI analysis" uses — never an isolated function. Confirmed by
+  tracing the call chain and by the dry run itself exercising real
+  classification, real dynamic routing, real agents, real deterministic
+  resolution, and real persistence for every scenario.
+- The scorer cannot award a false pass, and cannot award a false fail
+  because grounding comes from the wrong agent — both properties are now
+  verified **live**, not just in unit tests: the dry run's one
+  deliberately-wrong scenario correctly failed (0.43, all three
+  mismatched dimensions correctly identified in `notes`), and
+  `suspicious-activity` — the scenario that previously exposed the
+  Policy-agent-only scoring bug (Audit #3, ENG-10) — correctly passed
+  (1.00), proving that fix holds through the real pipeline.
+- The Evaluations UI now clearly separates expected vs. actual outcome
+  per dimension, per-dimension check/cross marks, a pass/fail badge with
+  score, and visible failure notes — not just a hover tooltip as before.
+
+### What was superficial or misleading (the real finding)
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| ENG-13 | **Persisted records never recorded which provider actually served a call — only which model it was routed to.** `AgentInvocation.model` (and `AgentRunMetrics`) always showed the *configured* target (e.g. `"claude-sonnet-5"`), even when a mock/fixture provider actually answered. A run entirely served by a fixture would have persisted and rendered **identically** to a real model run — meaning running this task's own fixture-based dry run, before this fix, would have silently produced database rows and UI screens indistinguishable from genuine live evaluation results. Found before writing a single fixture response, by reading `modelClient.ts`/`mock.ts` against property 9 of the request. | **P1** | **Fixed** — `ModelCallResult`/`AgentRunMetrics` now carry the actual `provider.key`; `AgentInvocation.provider` (schema migration) and `OrchestrationRun.isSimulated`/`EvaluationResult.isSimulated` (derived at persist time) make this queryable and renderable. Ticket Detail, Evaluations, and AI Operations all read this flag directly — AI Operations excludes simulated runs from its aggregates entirely rather than let them inflate "real" numbers. See DECISIONS.md. |
+
+### The dry run itself
+
+Built `scripts/runEvaluationDryRun.ts` + `scripts/evaluationDryRunFixtures.ts`
+— a comprehensive fixture covering all 10 scenarios (9 correct, 1
+deliberately wrong — see EVALUATION.md for the full rationale and
+results table) — and ran it via `npm run eval:dry-run`. Result: **9/10
+passed (1.00 each), 1/10 failed exactly as designed (0.43), 0/10 failed
+to run.** Verified in the browser: the Ticket Detail page shows a
+"SIMULATED RUN" banner and per-invocation "simulated (mock)" badges; the
+Evaluations page shows a purple "simulated" badge distinct from pass/fail
+and states plainly that live evaluation has not run yet; AI Operations
+shows 0 orchestration runs and a note that 10 simulated runs exist and
+are excluded. All confirmed by reading the actual persisted database
+state (`provider` = `"mock"` on every invocation, `isSimulated` = `true`
+on every run and result, zero non-simulated rows) as well as visually.
+
+### Outcome
+
+1 P1 found and fixed (ENG-13) before it could produce a single misleading
+row — the dry run that followed the fix produced honestly-labeled results
+throughout. Added 3 new integration tests proving provider provenance
+round-trips correctly (mock → simulated=true; real → simulated=false;
+one-mocked-invocation-among-many → simulated=true) and updated
+`runAnalysis.spec.ts` to assert the SIMULATED banner appears and that AI
+Operations correctly excludes that run. Full suite re-run after fixes:
+`typecheck`, `lint`, **122** unit tests, **9** integration tests (up from
+6), `build`, and **9/9** e2e tests all green. No P0s found; no P2s logged
+this cycle beyond what Audit #3 already tracks. No API key was used or
+requested at any point.
+
+**Readiness assessment:** the system is ready for a first controlled
+live-model evaluation. Every property requested for audit holds by
+inspection and by this dry run; the only remaining gap (a real
+`ANTHROPIC_API_KEY`) is a credential the user must explicitly provide,
+per standing project policy — not an engineering readiness gap.

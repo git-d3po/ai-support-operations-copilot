@@ -4,7 +4,7 @@ Backlog for work explicitly deferred, plus P2 findings from AUDIT.md.
 Phase 2 (real orchestration end to end) is done — see ARCHITECTURE.md and
 DECISIONS.md. This is what's left.
 
-## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5)
+## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5, Audit #4)
 
 - **Run a real evaluation pass.** `npm run eval` exists, is tested for
   safety, and refuses to run without a real `ANTHROPIC_API_KEY` (see
@@ -12,7 +12,11 @@ DECISIONS.md. This is what's left.
   and this project's standing rule is that a real model credential is
   never used without being asked first. The Evaluations page will keep
   honestly showing "not run" until the user provides a key and asks for
-  this to happen.
+  this to happen. **Audit #4 confirmed the system is engineering-ready**
+  for this — `npm run eval:dry-run` validated the full pipeline end to
+  end (9/10 correct scenarios passed, 1 deliberately-wrong scenario
+  correctly failed) against a deterministic fixture, so a real run should
+  need no further plumbing changes.
 
 ## AI Operations — polish, once there's more real usage data to show
 
@@ -59,6 +63,11 @@ DECISIONS.md. This is what's left.
 
 ## Smaller / cleanup
 
+- `EvaluationResult.orchestrationRunId` has no declared Prisma `@relation`
+  to `OrchestrationRun` (pre-existing) — the Evaluations page works around
+  this with a manual second query rather than `include`. Low priority
+  (works correctly as-is); worth a proper relation if this page's queries
+  grow more complex.
 - `AgentInvocation.startedAt`/`finishedAt` are back-computed approximations
   (all invocations in a run share the same `finishedAt`) that don't
   reflect real sequential timing — `latencyMs` itself is accurate, only

@@ -13,6 +13,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "eval": "tsx scripts/runEvaluation.ts",
+    "eval:dry-run": "tsx scripts/runEvaluationDryRun.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset",

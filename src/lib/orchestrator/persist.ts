@@ -5,7 +5,18 @@ import type { OrchestrationOutcome } from "./orchestrator";
 
 export interface PersistedRun {
   orchestrationRunId: string;
+  /** True when any part of this run was actually served by the mock
+   * provider — see SIMULATED_PROVIDER_KEY below. Callers (e.g. the
+   * evaluation runner) use this to tag their own records honestly rather
+   * than re-querying. */
+  isSimulated: boolean;
 }
+
+/** The one provider key that means "this call was NOT served by a real
+ * model" — see modelClient.ts's ModelCallResult.provider and
+ * DECISIONS.md ("Honestly recording which provider actually served a
+ * call"). Anything else (today: "anthropic") counts as real. */
+export const SIMULATED_PROVIDER_KEY = "mock";
 
 /**
  * Writes a completed OrchestrationOutcome as an OrchestrationRun + one
@@ -21,6 +32,10 @@ export async function persistOrchestrationRun(
 ): Promise<PersistedRun> {
   const now = new Date();
 
+  const isSimulated =
+    outcome.classificationMetrics.provider === SIMULATED_PROVIDER_KEY ||
+    outcome.agentResults.some((r) => r.metrics.provider === SIMULATED_PROVIDER_KEY);
+
   const run = await db.orchestrationRun.create({
     data: {
       ticketId,
@@ -30,6 +45,7 @@ export async function persistOrchestrationRun(
       resolution: outcome.resolution,
       escalation: outcome.escalation ?? Prisma.JsonNull,
       response: outcome.response ?? Prisma.JsonNull,
+      isSimulated,
     },
   });
 
@@ -41,6 +57,7 @@ export async function persistOrchestrationRun(
       status: outcome.classificationFailed ? "failed" : "succeeded",
       finding: outcome.classification,
       model: outcome.classificationMetrics.model,
+      provider: outcome.classificationMetrics.provider,
       inputTokens: outcome.classificationMetrics.inputTokens,
       outputTokens: outcome.classificationMetrics.outputTokens,
       latencyMs: classifierLatencyMs,
@@ -63,6 +80,7 @@ export async function persistOrchestrationRun(
         status: failed ? "failed" : "succeeded",
         finding: result.finding,
         model: result.metrics.model,
+        provider: result.metrics.provider,
         inputTokens: result.metrics.inputTokens ?? null,
         outputTokens: result.metrics.outputTokens ?? null,
         latencyMs,
@@ -74,7 +92,7 @@ export async function persistOrchestrationRun(
     });
   }
 
-  return { orchestrationRunId: run.id };
+  return { orchestrationRunId: run.id, isSimulated };
 }
 
 /** Persists a run that aborted entirely (e.g. no ANTHROPIC_API_KEY
@@ -90,5 +108,5 @@ export async function persistFailedRun(ticketId: string, errorMessage: string): 
       errorMessage,
     },
   });
-  return { orchestrationRunId: run.id };
+  return { orchestrationRunId: run.id, isSimulated: false };
 }

@@ -7,12 +7,12 @@ import { test, expect } from "@playwright/test";
  * resolution, and response.
  *
  * The model provider itself is swapped for a deterministic fixture for
- * this run only (see playwright.config.ts's webServer.env,
- * instrumentation.ts, and src/lib/ai/providers/e2eMockProvider.ts) — this
- * is what makes the suite's own promise ("runs the same way every time")
- * hold even though the real product depends on a live LLM. See
- * DECISIONS.md ("E2E coverage for the AI analysis flow uses a fixture
- * model provider") for why.
+ * this run only (see playwright.config.ts's webServer.env and
+ * src/lib/ai/providers/registry.ts / e2eMockProvider.ts) — this is what
+ * makes the suite's own promise ("runs the same way every time") hold
+ * even though the real product depends on a live LLM. See DECISIONS.md
+ * ("E2E coverage for the AI analysis flow uses a fixture model provider")
+ * for why.
  */
 
 test("running AI analysis on the duplicate-billing ticket produces a real, persisted result", async ({ page }) => {
@@ -28,6 +28,13 @@ test("running AI analysis on the duplicate-billing ticket produces a real, persi
   // moment for the full pipeline (classify -> billing -> policy ->
   // response -> persist -> revalidate) to complete.
   await expect(page.getByRole("button", { name: "Run AI analysis again" })).toBeVisible({ timeout: 15_000 });
+
+  // This run is genuinely served by a fixture, not a real model — the
+  // page must say so honestly, not render indistinguishably from a real
+  // run. See DECISIONS.md ("Honestly recording which provider actually
+  // served a call").
+  await expect(page.getByText("SIMULATED RUN", { exact: false })).toBeVisible();
+  await expect(page.getByText("simulated (mock)").first()).toBeVisible();
 
   // Agents invoked: classification always runs, plus exactly billing,
   // policy, and response for this ticket (never technical or risk — the
@@ -53,14 +60,18 @@ test("running AI analysis on the duplicate-billing ticket produces a real, persi
   await expect(page.getByText(/refunded it in full/i)).toBeVisible();
 });
 
-test("AI Operations reflects the run that just happened", async ({ page }) => {
+test("AI Operations correctly EXCLUDES the simulated run from real metrics", async ({ page }) => {
   // Depends on the previous test having run first in this file (Playwright
-  // runs tests within one file in declaration order).
+  // runs tests within one file in declaration order). The e2e journey's
+  // analysis run is served by the deterministic fixture provider (see
+  // e2eMockProvider.ts) — persistOrchestrationRun() correctly tags it
+  // isSimulated: true, and AI Operations must exclude it from every
+  // "real" metric rather than silently inflating live numbers with test
+  // data. See DECISIONS.md ("Honestly recording which provider actually
+  // served a call").
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "AI Operations" })).toBeVisible();
   await expect(page.getByText("Orchestration runs")).toBeVisible();
-  // At least the one run from the previous test — real usage data, not a
-  // placeholder.
-  await expect(page.getByText("Billing Agent")).toBeVisible();
-  await expect(page.getByText("Policy Agent")).toBeVisible();
+  await expect(page.getByText(/simulated \(fixture-provider\) run\(s\) exist/)).toBeVisible();
+  await expect(page.getByText("No agent invocations recorded yet")).toBeVisible();
 });

@@ -11,6 +11,7 @@ export interface ClassifyResult {
   failed: boolean;
   metrics: {
     model: string;
+    provider: string;
     inputTokens: number;
     outputTokens: number;
     latencyMs: number;

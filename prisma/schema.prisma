@@ -205,6 +205,15 @@ model OrchestrationRun {
   // instead, since the run itself still completes.
   errorMessage String?
 
+  // True when ANY invocation in this run was actually served by the
+  // "mock" provider (e.g. USE_MOCK_MODEL_PROVIDER for e2e, or a
+  // deliberate fixture-based evaluation dry run) rather than a real model
+  // — derived from AgentInvocation.provider at persist time, denormalized
+  // here so the UI and AI Operations queries can filter cheaply without a
+  // join. See DECISIONS.md ("Honestly recording which provider actually
+  // served a call").
+  isSimulated Boolean @default(false)
+
   agentInvocations AgentInvocation[]
 
   @@index([ticketId])
@@ -218,7 +227,11 @@ model AgentInvocation {
   agentKey           String // "billing" | "policy" | "technical" | "risk" | "response"
   status             String // "succeeded", "failed", "skipped"
   finding            Json? // AgentFinding
-  model              String // model id used for this invocation
+  model              String // model id this call was ROUTED to (modelRouting.ts) — the
+                             // intended target, not proof of who actually served it.
+  provider           String   @default("anthropic") // the provider that ACTUALLY served this
+                             // call ("anthropic" | "mock") — read from ModelProvider.key at
+                             // call time, independent of what was configured/intended.
   inputTokens        Int?
   outputTokens       Int?
   latencyMs          Int?
@@ -255,6 +268,11 @@ model EvaluationResult {
   orchestrationRunId String
   scores             Json // EvaluationResult (per-dimension scores + overall)
   passed             Boolean
+  // Denormalized from the linked OrchestrationRun at write time: true when
+  // this result came from a deterministic fixture/mock run, not a live
+  // model. The Evaluations UI must never render this indistinguishably
+  // from a real evaluation result — see DECISIONS.md.
+  isSimulated        Boolean        @default(false)
   createdAt          DateTime       @default(now())
 
   @@index([evaluationCaseId])

@@ -990,3 +990,121 @@ rigor.
 verify that the *Policy Agent itself* (not any other agent) grounds a
 decision, that would need a separate, more specific expected-outcome
 field — not a reason to revert this fallback for the general case.
+
+---
+
+## 2026-09-18 — Honestly recording which provider actually served a call
+
+**Context:** Preparing to validate the evaluation pipeline end-to-end
+against the deterministic fixture provider (see the next entry) surfaced a
+real gap: `AgentInvocation.model` and `AgentRunMetrics.model` always
+recorded the model `modelRouting.ts` *routed* a call to (e.g.
+`"claude-sonnet-5"`), never whether that call was actually answered by the
+real `AnthropicProvider` or by a mock. A run entirely served by a fixture
+would have persisted and rendered **identically** to a real model run —
+directly contradicting the requirement that fixture/simulated results
+never be displayed as if they measure real model performance.
+
+**Options considered:** (a) Leave it as-is and rely on callers to
+remember which runs were simulated (e.g. by tracking ticket IDs
+out-of-band); (b) record, per model call, which `ModelProvider.key`
+actually served it — independent of what was configured — and roll that
+up to `OrchestrationRun`/`EvaluationResult` as an `isSimulated` flag.
+
+**Decision made:** (b). `ModelCallResult` (modelClient.ts) now includes
+`provider: provider.key` (the *actual* server), separate from `model`
+(the *intended* target). This flows through `AgentRunMetrics` and
+`ClassifyResult.metrics` into `AgentInvocation.provider` (schema
+migration `add_provider_provenance_tracking`), and
+`persistOrchestrationRun()` computes `OrchestrationRun.isSimulated =
+true` whenever any invocation's actual provider is `"mock"`.
+`runEvaluationSuite()` copies this onto `EvaluationResult.isSimulated`.
+The UI (Ticket Detail, Evaluations, AI Operations) reads this flag
+directly rather than inferring it — a purple "simulated" badge/banner
+wherever a simulated result could otherwise be mistaken for a real one,
+and AI Operations excludes simulated runs from its aggregates entirely
+rather than silently inflating "real" activity numbers.
+
+**Rationale:** Option (a) is exactly the kind of implicit convention that
+breaks the first time someone forgets it, and it can't be enforced or
+tested. Option (b) makes the guarantee structural and independently
+verifiable — `tests/integration/persist.test.ts` proves a run with any
+mock-served invocation is tagged simulated, and a run with only
+real-provider invocations is not. This is the same "enforce, don't just
+document" principle already applied to policy-citation grounding (see
+above).
+
+**Tradeoffs:** One more column on two tables, and `AgentRunMetrics`
+becomes a required (not optional) field everywhere a metrics object is
+constructed — a handful of test fixtures needed updating to add it
+explicitly, which is the point: it can no longer be silently omitted.
+
+**When we'd reconsider:** If a real second provider (e.g. OpenAI) is
+added, `isSimulated` should stay defined as "provider is specifically the
+mock/fixture key," not "provider differs from the default" — a real
+alternate provider must never be miscategorized as simulated.
+
+---
+
+## 2026-09-18 — Evaluation dry-run fixture: validating the harness, not the model
+
+**Context:** Asked explicitly to run the evaluation suite end-to-end
+against a deterministic fixture provider, without a real
+`ANTHROPIC_API_KEY`, to verify the evaluation *machinery* (orchestrator →
+persistence → scorer → UI) is wired correctly across all 10 curated
+scenarios — as distinct from `runAnalysis.spec.ts`'s e2e fixture, which
+only covers one ticket for a UI-journey test, and distinct from a real
+evaluation run, which `scripts/runEvaluation.ts` refuses to do without a
+real key.
+
+**Options considered:** (a) Skip this and only trust unit tests
+(`score.test.ts`, `resolve.test.ts`) that exercise the scorer in
+isolation; (b) extend `e2eMockProvider.ts` to cover all 10 scenarios,
+overloading its stated purpose; (c) a new, separate script
+(`scripts/runEvaluationDryRun.ts`) and fixture set
+(`scripts/evaluationDryRunFixtures.ts`) purpose-built for this, calling
+`runEvaluationSuite()` — the exact same function a real evaluation run
+uses — with a comprehensive fixture registered under `"anthropic"`.
+
+**Decision made:** (c). The fixture set answers 9 of the 10 scenarios
+"correctly" (matching their `expectedOutcome`) and **one scenario
+(`known-technical-issue`) deliberately wrong on purpose** — a
+misclassification that leads to an incorrect resolution — specifically to
+prove the scorer detects and reports a real failure through the actual
+runner and persistence layer, not just inside an isolated unit test.
+Every result this produces is tagged `isSimulated: true` (see the
+decision above) and rendered with a purple "simulated" badge everywhere
+in the UI; `scripts/runEvaluationDryRun.ts` also prints "NOT a live
+model" banners in its own output.
+
+**Rationale:** Option (a) doesn't prove the *wiring* is correct — unit
+tests call `scoreOutcome()` directly with hand-built inputs, never
+touching `analyzeTicket()`, persistence, or the real `selectAgents()`
+routing a real classification produces. Option (b) would have muddied
+`e2eMockProvider.ts`'s single stated purpose (one ticket, for Playwright).
+Option (c) is a small, additive, clearly-separate tool that reuses
+`runEvaluationSuite()` verbatim — if this dry run passes, the same code
+path is proven correct for when a real key is provided; nothing about
+`runEvaluationSuite()` itself needed to change to support this.
+
+**Actual result of running it** (see EVALUATION.md): 9/10 scenarios
+passed with a perfect 1.00 score, including `suspicious-activity` — which
+specifically exercises the policy-grounding-via-Risk-agent fallback fixed
+earlier in this same audit cycle (see "Evaluation scorer must accept
+policy grounding cited by any agent," above) — proving that fix works
+through the real pipeline, not only in its own unit test. The one
+deliberately-wrong scenario scored 0.43 and failed, exactly as designed,
+proving the scorer's failure-detection path also works end-to-end.
+
+**Tradeoffs:** The fixture content (~10 scenarios × several agents) is
+nontrivial hand-authored data that must be kept loosely in sync with
+`prisma/data/scenarios.ts` if that file's tickets change — mitigated by
+importing `SCENARIOS` directly for subject-matching rather than
+duplicating ticket text, and by the dry-run script throwing a clear error
+(rather than guessing) if it's ever asked for a scenario/task pairing it
+doesn't have a fixture for.
+
+**When we'd reconsider:** This tool's purpose is permanently narrow
+(harness validation); it should never be pointed at real evaluation
+scoring or presented as measuring model quality. If that boundary starts
+to blur in practice, the fix is clearer labeling, not removing the tool.

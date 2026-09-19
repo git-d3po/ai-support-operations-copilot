@@ -60,7 +60,7 @@ function fabricateOutcome(): OrchestrationOutcome {
       keyEvidence: ["charged twice"],
     },
     classificationFailed: false,
-    classificationMetrics: { model: "mock-model", inputTokens: 100, outputTokens: 20, latencyMs: 250, estimatedCostUsd: 0.001 },
+    classificationMetrics: { model: "mock-model", provider: "mock", inputTokens: 100, outputTokens: 20, latencyMs: 250, estimatedCostUsd: 0.001 },
     agentsInvoked: ["billing", "policy", "response"],
     agentResults: [
       {
@@ -72,7 +72,7 @@ function fabricateOutcome(): OrchestrationOutcome {
           policyReferences: [],
           flags: ["duplicate_charge_confirmed"],
         },
-        metrics: { model: "mock-model", inputTokens: 200, outputTokens: 40, latencyMs: 300, estimatedCostUsd: 0.002 },
+        metrics: { model: "mock-model", provider: "mock", inputTokens: 200, outputTokens: 40, latencyMs: 300, estimatedCostUsd: 0.002 },
       },
       {
         finding: {
@@ -90,7 +90,7 @@ function fabricateOutcome(): OrchestrationOutcome {
             conditionsUnmet: [],
           },
         },
-        metrics: { model: "mock-model", inputTokens: 300, outputTokens: 50, latencyMs: 400, estimatedCostUsd: 0.003 },
+        metrics: { model: "mock-model", provider: "mock", inputTokens: 300, outputTokens: 50, latencyMs: 400, estimatedCostUsd: 0.003 },
       },
       {
         finding: {
@@ -101,7 +101,7 @@ function fabricateOutcome(): OrchestrationOutcome {
           policyReferences: [],
           flags: [],
         },
-        metrics: { model: "mock-model", inputTokens: 150, outputTokens: 60, latencyMs: 200, estimatedCostUsd: 0.0015 },
+        metrics: { model: "mock-model", provider: "mock", inputTokens: 150, outputTokens: 60, latencyMs: 200, estimatedCostUsd: 0.0015 },
         response: { body: "We refunded the duplicate charge.", tone: "empathetic", nextSteps: [] },
       },
     ],
@@ -142,6 +142,51 @@ describe("persistOrchestrationRun (real SQLite database)", () => {
     expect(keys).toEqual(["billing", "classifier", "policy", "response"].sort());
     expect(invocations.every((i) => i.status === "succeeded")).toBe(true);
     expect(invocations.every((i) => i.model === "mock-model")).toBe(true);
+  });
+
+  it("honestly records the actual serving provider per invocation and rolls it up to isSimulated", async () => {
+    const ticket = await createThrowawayTicket();
+    const { orchestrationRunId, isSimulated } = await persistOrchestrationRun(ticket.id, fabricateOutcome());
+
+    // fabricateOutcome()'s metrics all report provider: "mock" — a real
+    // AnthropicProvider call would report "anthropic" instead. See
+    // DECISIONS.md ("Honestly recording which provider actually served a
+    // call").
+    expect(isSimulated).toBe(true);
+    const run = await db.orchestrationRun.findUniqueOrThrow({ where: { id: orchestrationRunId } });
+    expect(run.isSimulated).toBe(true);
+
+    const invocations = await db.agentInvocation.findMany({ where: { orchestrationRunId } });
+    expect(invocations.every((i) => i.provider === "mock")).toBe(true);
+  });
+
+  it("marks a run as NOT simulated when every invocation was actually served by a real provider", async () => {
+    const ticket = await createThrowawayTicket();
+    const outcome = fabricateOutcome();
+    outcome.classificationMetrics.provider = "anthropic";
+    for (const result of outcome.agentResults) {
+      result.metrics.provider = "anthropic";
+    }
+
+    const { orchestrationRunId, isSimulated } = await persistOrchestrationRun(ticket.id, outcome);
+    expect(isSimulated).toBe(false);
+
+    const run = await db.orchestrationRun.findUniqueOrThrow({ where: { id: orchestrationRunId } });
+    expect(run.isSimulated).toBe(false);
+  });
+
+  it("marks a run as simulated even when only ONE invocation (not the classifier) used the mock provider", async () => {
+    const ticket = await createThrowawayTicket();
+    const outcome = fabricateOutcome();
+    outcome.classificationMetrics.provider = "anthropic";
+    for (const result of outcome.agentResults) {
+      result.metrics.provider = "anthropic";
+    }
+    // Only the billing agent (index 0) was actually mocked.
+    outcome.agentResults[0].metrics.provider = "mock";
+
+    const { isSimulated } = await persistOrchestrationRun(ticket.id, outcome);
+    expect(isSimulated).toBe(true);
   });
 
   it("captures model, tokens, latency, and estimated cost per invocation", async () => {

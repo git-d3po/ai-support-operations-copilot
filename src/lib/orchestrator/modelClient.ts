@@ -4,7 +4,16 @@ import { DEFAULT_MODEL_ROUTING, estimateCostUsd } from "./modelRouting";
 import type { ModelRoutingConfig, PipelineStepKey } from "./types";
 
 export interface ModelCallResult extends CompletionResult {
+  /** The model this call was ROUTED to (modelRouting.ts) — the intended
+   * target, not proof of who actually served it. */
   model: string;
+  /** The provider that ACTUALLY served this call (`ModelProvider.key`),
+   * independent of what was configured. When the "anthropic" slot is
+   * overridden with a fixture/mock (e2e tests, a deliberate evaluation
+   * dry run), this reads "mock" — never silently reported as if a real
+   * model answered. See DECISIONS.md ("Honestly recording which provider
+   * actually served a call"). */
+  provider: string;
   latencyMs: number;
   estimatedCostUsd: number;
 }
@@ -40,6 +49,7 @@ export async function callModel(
   return {
     ...result,
     model: config.model,
+    provider: provider.key,
     latencyMs,
     estimatedCostUsd: estimateCostUsd(stepKey, result.inputTokens, result.outputTokens, routing),
   };

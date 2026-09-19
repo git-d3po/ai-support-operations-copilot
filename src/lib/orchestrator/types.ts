@@ -38,6 +38,8 @@ export interface AgentContext {
 
 export interface AgentRunMetrics {
   model: string;
+  /** Actual serving provider — see modelClient.ts's ModelCallResult. */
+  provider: string;
   inputTokens?: number;
   outputTokens?: number;
   latencyMs: number;

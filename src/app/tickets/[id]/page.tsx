@@ -106,6 +106,12 @@ export default async function TicketDetailPage({
 
           {latestRun && latestRun.status === "completed" && (
             <div className="mt-3 flex flex-col gap-4">
+              {latestRun.isSimulated && (
+                <div className="rounded border border-purple-200 bg-purple-50 p-2 text-xs font-medium text-purple-800 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300">
+                  SIMULATED RUN — one or more steps were served by a deterministic fixture
+                  provider, not a real model. Not a measure of real AI performance.
+                </div>
+              )}
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   Agents invoked ({latestRun.agentInvocations.length})
@@ -117,6 +123,7 @@ export default async function TicketDetailPage({
                       agentKey={inv.agentKey}
                       status={inv.status}
                       model={inv.model}
+                      provider={inv.provider}
                       latencyMs={inv.latencyMs}
                       estimatedCostUsd={inv.estimatedCostUsd}
                       finding={inv.finding as unknown}
@@ -190,6 +197,7 @@ function AgentInvocationCard({
   agentKey,
   status,
   model,
+  provider,
   latencyMs,
   estimatedCostUsd,
   finding,
@@ -197,6 +205,7 @@ function AgentInvocationCard({
   agentKey: string;
   status: string;
   model: string;
+  provider: string;
   latencyMs: number | null;
   estimatedCostUsd: number | null;
   finding: unknown;
@@ -205,20 +214,28 @@ function AgentInvocationCard({
   const isClassifier = agentKey === "classifier";
   const classification = isClassifier ? (finding as TicketClassification | null) : null;
   const agentFinding = !isClassifier ? (finding as AnyAgentFinding | null) : null;
+  const isSimulated = provider !== "anthropic";
 
   return (
     <div className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-800">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{label}</span>
-        <span
-          className={
-            status === "succeeded"
-              ? "rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-              : "rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300"
-          }
-        >
-          {status}
-        </span>
+        <div className="flex gap-1">
+          {isSimulated && (
+            <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-950 dark:text-purple-300">
+              simulated ({provider})
+            </span>
+          )}
+          <span
+            className={
+              status === "succeeded"
+                ? "rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                : "rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300"
+            }
+          >
+            {status}
+          </span>
+        </div>
       </div>
       <p className="mt-1 text-xs text-zinc-500">
         {model} · {latencyMs != null ? `${latencyMs}ms` : "—"} ·{" "}

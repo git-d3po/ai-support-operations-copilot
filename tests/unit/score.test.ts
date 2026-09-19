@@ -26,7 +26,7 @@ function fullyCorrectOutcome(): OrchestrationOutcome {
       keyEvidence: [],
     },
     classificationFailed: false,
-    classificationMetrics: { model: "m", inputTokens: 1, outputTokens: 1, latencyMs: 1, estimatedCostUsd: 0 },
+    classificationMetrics: { model: "m", provider: "mock", inputTokens: 1, outputTokens: 1, latencyMs: 1, estimatedCostUsd: 0 },
     agentsInvoked: ["billing", "policy", "response"],
     agentResults: [
       {
@@ -38,7 +38,7 @@ function fullyCorrectOutcome(): OrchestrationOutcome {
           policyReferences: [],
           flags: [],
         },
-        metrics: { model: "m", latencyMs: 1 },
+        metrics: { model: "m", provider: "mock", latencyMs: 1 },
       },
       {
         finding: {
@@ -56,11 +56,11 @@ function fullyCorrectOutcome(): OrchestrationOutcome {
             conditionsUnmet: [],
           },
         },
-        metrics: { model: "m", latencyMs: 1 },
+        metrics: { model: "m", provider: "mock", latencyMs: 1 },
       },
       {
         finding: { agentKey: "response", summary: "x", evidence: [], confidence: 0.9, policyReferences: [], flags: [] },
-        metrics: { model: "m", latencyMs: 1 },
+        metrics: { model: "m", provider: "mock", latencyMs: 1 },
         response: { body: "x", tone: "neutral", nextSteps: [] },
       },
     ],
@@ -178,7 +178,7 @@ describe("scoreOutcome", () => {
           keyEvidence: [],
         },
         classificationFailed: false,
-        classificationMetrics: { model: "m", inputTokens: 1, outputTokens: 1, latencyMs: 1, estimatedCostUsd: 0 },
+        classificationMetrics: { model: "m", provider: "mock", inputTokens: 1, outputTokens: 1, latencyMs: 1, estimatedCostUsd: 0 },
         agentsInvoked: ["risk", "response"],
         agentResults: [
           {
@@ -194,11 +194,11 @@ describe("scoreOutcome", () => {
               targetTeam: "trust_and_safety",
               severity: "critical",
             },
-            metrics: { model: "m", latencyMs: 1 },
+            metrics: { model: "m", provider: "mock", latencyMs: 1 },
           },
           {
             finding: { agentKey: "response", summary: "x", evidence: [], confidence: 0.9, policyReferences: [], flags: [] },
-            metrics: { model: "m", latencyMs: 1 },
+            metrics: { model: "m", provider: "mock", latencyMs: 1 },
             response: { body: "x", tone: "neutral", nextSteps: [] },
           },
         ],

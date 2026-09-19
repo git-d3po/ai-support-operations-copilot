@@ -10,6 +10,10 @@ export interface StructuredStepResult<T> {
   parseError: string | null;
   metrics: {
     model: string;
+    /** Actual serving provider (see ModelCallResult) — "unknown" only if
+     * every attempt failed before any provider call resolved, which
+     * shouldn't happen in practice since providers reject synchronously. */
+    provider: string;
     inputTokens: number;
     outputTokens: number;
     latencyMs: number;
@@ -44,6 +48,7 @@ export async function runStructuredStep<Schema extends z.ZodTypeAny>(
 
   const metrics = {
     model: calls.at(-1)?.model ?? "unknown",
+    provider: calls.at(-1)?.provider ?? "unknown",
     inputTokens: calls.reduce((sum, c) => sum + c.inputTokens, 0),
     outputTokens: calls.reduce((sum, c) => sum + c.outputTokens, 0),
     latencyMs: calls.reduce((sum, c) => sum + c.latencyMs, 0),

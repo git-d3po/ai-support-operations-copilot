@@ -36,7 +36,7 @@ seeded into the `EvaluationCase` table, one per curated `Ticket`
 |---|---|---|
 | Classification accuracy | Did the orchestrator detect the right intent? | `OrchestrationRun.classification.intent` vs. `expectedOutcome.expectedIntent` |
 | Routing accuracy | Did it invoke the right specialist agents — no more, no fewer? | `AgentInvocation` rows' agent keys vs. `expectedOutcome.expectedAgents` |
-| Policy accuracy | Did the Policy Agent cite the correct policy and reach the correct decision? | Policy Agent's `AgentFinding.policyReferences` / decision vs. `expectedOutcome.expectedPolicySlug` |
+| Policy accuracy | Was the expected policy grounded somewhere in the outcome — either as the Policy Agent's own decision, or cited by another agent (e.g. Risk) for scenarios where Policy isn't expected to run at all? | Policy Agent's `policyDecision.applicablePolicy.slug`, falling back to any agent's `policyReferences`, vs. `expectedOutcome.expectedPolicySlug` |
 | Escalation accuracy | Did it escalate exactly when it should (no more, no less)? | `OrchestrationRun.escalation !== null` vs. `expectedOutcome.expectedEscalation` |
 | Resolution accuracy | Did it reach the correct final action? | `OrchestrationRun.resolution.action` vs. `expectedOutcome.expectedAction` |
 | Grounding / evidence quality | Is each finding's evidence actually drawn from the ticket/account data, not fabricated? | Manual rubric initially (see "Scoring," below); a model-graded check is a Phase 2+ candidate |
@@ -71,8 +71,60 @@ specific `OrchestrationRun` that was scored.
   work end to end using a deterministic fixture provider tuned to one
   ticket — it demonstrates the mechanism works, not that the AI's
   judgment is correct. Only a real evaluation run measures that.
+- **`npm run eval:dry-run` goes further: it runs the full evaluation
+  suite — all 10 scenarios, through the real orchestrator and scorer —
+  against a deterministic fixture provider.** This is a harness-validation
+  tool, not a real evaluation; see "Dry-run harness validation," below,
+  for what it proved and why its results are tagged and rendered as
+  `isSimulated` everywhere, never indistinguishable from a live result.
 
-## Running the suite
+## Dry-run harness validation (not a real evaluation)
+
+`npm run eval:dry-run` (`scripts/runEvaluationDryRun.ts` +
+`scripts/evaluationDryRunFixtures.ts`) registers a comprehensive,
+hand-authored fixture provider covering all 10 curated scenarios and runs
+`runEvaluationSuite()` against it — the *exact same function* a real
+evaluation uses, with the model provider swapped for a deterministic
+fixture. Its purpose is narrow and specific: prove the orchestrator →
+persistence → scorer → UI wiring is correct end to end, before ever
+spending a real model call on it. It is **not** a measurement of AI
+quality, and every result it produces is tagged `isSimulated: true` (see
+DECISIONS.md, "Honestly recording which provider actually served a
+call") — rendered with a purple "simulated" badge/banner throughout the
+app, and excluded entirely from AI Operations' live metrics.
+
+9 of the 10 fixture scenarios are answered "correctly" (matching their
+`expectedOutcome` exactly); the 10th (`known-technical-issue`) is
+answered **deliberately wrong on purpose** — a misclassification that
+leads to an incorrect resolution — specifically to prove the scorer
+detects and reports a real failure through the actual pipeline, not just
+inside an isolated unit test.
+
+**Actual results from the last run:**
+
+| Scenario | Result | Score |
+|---|---|---|
+| password-reset | ✓ pass | 1.00 |
+| duplicate-billing | ✓ pass | 1.00 |
+| prohibited-refund | ✓ pass | 1.00 |
+| legitimate-refund | ✓ pass | 1.00 |
+| failed-payment | ✓ pass | 1.00 |
+| known-technical-issue | ✗ **fail (deliberate)** | 0.43 |
+| technical-escalation | ✓ pass | 1.00 |
+| suspicious-activity | ✓ pass | 1.00 |
+| ambiguous-request | ✓ pass | 1.00 |
+| multi-domain | ✓ pass | 1.00 |
+
+9 passed, 1 failed (as designed), 0 failed to run. Notably,
+`suspicious-activity` scored a perfect 1.00 — this specifically exercises
+the policy-grounding-via-Risk-agent scorer fallback (see DECISIONS.md,
+"Evaluation scorer must accept policy grounding cited by any agent"),
+confirming that fix works through the real, live-wired pipeline and not
+only in its own unit test. `known-technical-issue`'s failure notes
+correctly identify all three mismatches (intent, routing, resolution),
+exactly as the deliberately-wrong fixture was designed to produce.
+
+## Running the suite for real
 
 ```bash
 npm run eval

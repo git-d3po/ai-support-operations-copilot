@@ -12,11 +12,18 @@ const AGENT_LABEL: Record<string, string> = {
 };
 
 export default async function OperationsPage() {
-  const [statusCounts, priorityCounts, runs] = await Promise.all([
+  const [statusCounts, priorityCounts, allRuns, simulatedRunCount] = await Promise.all([
     db.ticket.groupBy({ by: ["status"], _count: true }),
     db.ticket.groupBy({ by: ["priority"], _count: true }),
     db.orchestrationRun.findMany({ include: { agentInvocations: true } }),
+    db.orchestrationRun.count({ where: { isSimulated: true } }),
   ]);
+
+  // Simulated (fixture-provider) runs are excluded from operational
+  // metrics entirely — they'd otherwise silently inflate "real" activity
+  // numbers with dry-run/test data. See DECISIONS.md ("Honestly recording
+  // which provider actually served a call").
+  const runs = allRuns.filter((r) => !r.isSimulated);
 
   const completedRuns = runs.filter((r) => r.status === "completed");
   const failedRuns = runs.filter((r) => r.status === "failed");
@@ -53,6 +60,12 @@ export default async function OperationsPage() {
         scored accuracy against known-correct scenarios (see DECISIONS.md, &ldquo;Why live/demo metrics
         are separated from evaluation metrics&rdquo;).
       </p>
+      {simulatedRunCount > 0 && (
+        <p className="mt-1 text-xs text-purple-700 dark:text-purple-400">
+          {simulatedRunCount} additional simulated (fixture-provider) run(s) exist and are
+          intentionally excluded from every metric below — see the Evaluations page.
+        </p>
+      )}
 
       <div className="mt-6 grid grid-cols-2 gap-6 lg:grid-cols-4">
         <Stat label="Orchestration runs" value={runs.length} />
