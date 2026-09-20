@@ -2,7 +2,7 @@ import type { TicketIntent } from "@/lib/ai/schemas";
 
 /**
  * Lightweight templates used only to generate believable *background*
- * inbox volume (ordinary tickets with no evaluation stake). The 10 curated
+ * inbox volume (ordinary tickets with no evaluation stake). The 11 curated
  * scenarios in scenarios.ts are hand-authored instead, because those are
  * the ones the evaluation suite scores correctness against.
  */

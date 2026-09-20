@@ -1,7 +1,7 @@
 /**
  * `npm run eval:dry-run` — validates the evaluation pipeline end to end
  * (orchestrator → persistence → scorer → UI) against a deterministic
- * fixture provider covering all 10 curated scenarios. NEVER uses or
+ * fixture provider covering all 11 curated scenarios. NEVER uses or
  * requires a real ANTHROPIC_API_KEY.
  *
  * This is a harness-validation tool, not a measurement of AI quality —

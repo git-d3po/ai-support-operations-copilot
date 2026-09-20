@@ -33,7 +33,7 @@ prisma/
     products.ts           # Halcyon's product/plan catalog
     policies.ts           # synthetic company policy documents
     productDocs.ts        # synthetic product documentation / KB articles
-    scenarios.ts           # the 10 curated evaluation tickets + expected outcomes
+    scenarios.ts           # the 11 curated evaluation tickets + expected outcomes
     ticketTemplates.ts     # templates for ordinary background inbox tickets
 
 scripts/
@@ -100,7 +100,7 @@ See `prisma/schema.prisma` for the authoritative definition. Five domains:
    `SubscriptionItem`, `Invoice`, `Transaction`. Standard normalized
    billing shape; nothing AI-specific.
 2. **Support domain** — `Ticket`, `Message`. A ticket optionally carries a
-   `scenarioKey`, marking it as one of the 10 curated evaluation tickets.
+   `scenarioKey`, marking it as one of the 11 curated evaluation tickets.
 3. **Knowledge domain** — `Policy`, `ProductDoc`. What specialist agents
    ground findings in.
 4. **AI orchestration domain** — `OrchestrationRun` (one per "Run AI
@@ -289,7 +289,7 @@ product's centerpiece (see DECISIONS.md).
 1. Resets the database (idempotent — safe to re-run).
 2. Seeds static reference data: the product catalog, policy documents, and
    product docs (`prisma/data/`).
-3. Materializes the 10 curated scenarios from hand-authored fixtures in
+3. Materializes the 11 curated scenarios from hand-authored fixtures in
    `prisma/data/scenarios.ts` — specific customers, accounts, billing
    history, and conversations constructed so a *correct* AI analysis is
    actually determinable (this is what EVALUATION.md scores against).
@@ -303,7 +303,7 @@ invoices they have, which ticket template applies — goes through
 mulberry32 implementation) or `faker.seed(SEED)`. Given the same seed, the
 script produces byte-identical data every run; verified by running it
 twice and diffing the resulting row counts (`npm run db:seed` twice in a
-row produces the same "Seeded 100 customers, 89 tickets..." summary).
+row produces the same "Seeded 101 customers, 92 tickets..." summary).
 
 ## Running AI analysis: the request path
 
@@ -325,7 +325,7 @@ row produces the same "Seeded 100 customers, 89 tickets..." summary).
 ## Testing strategy
 
 - **Unit (Vitest, `tests/unit/`)**: schema validation, structured-output
-  parsing/retry, RNG determinism, dynamic agent selection against all 10
+  parsing/retry, RNG determinism, dynamic agent selection against all 11
   curated scenarios, the deterministic evidence/retrieval helpers
   (`evidence.test.ts`), each specialist agent and the classifier in
   isolation (via `MockProvider` and the `TASK:`-marker-based

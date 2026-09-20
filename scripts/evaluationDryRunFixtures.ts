@@ -1,13 +1,13 @@
 /**
- * Canned, deterministic responses for ALL 10 curated scenarios — used ONLY
+ * Canned, deterministic responses for ALL 11 curated scenarios — used ONLY
  * by scripts/runEvaluationDryRun.ts to validate that the evaluation
  * pipeline (orchestrator → persistence → scorer → UI) is wired correctly
  * end to end, without a live model. This is NOT a claim about real model
  * behavior for any scenario; see DECISIONS.md ("Evaluation dry-run
  * fixture: validating the harness, not the model").
  *
- * 9 of the 10 scenarios are answered "correctly" (matching their
- * expectedOutcome) so a clean pipeline run produces 9 passes. ONE
+ * 10 of the 11 scenarios are answered "correctly" (matching their
+ * expectedOutcome) so a clean pipeline run produces 10 passes. ONE
  * scenario (known-technical-issue) is deliberately answered WRONG on
  * purpose, to prove the scorer actually detects and reports a failure
  * end-to-end through the real runner — not just in isolated unit tests.
@@ -369,6 +369,48 @@ export const FIXTURES: Fixtures = {
       body: "Two things here: first, we found the duplicate $100 proration charge and have refunded it in full. Second, for the automations issue, this matches a known limitation on large boards after a plan change — splitting the board into two smaller ones should restore automation delivery immediately.",
       tone: "empathetic",
       nextSteps: ["Duplicate charge refunded", "Split the affected board to restore automations"],
+    }),
+  },
+  "out-of-window-refund": {
+    ticket_classification: JSON.stringify({
+      intent: "refund_request",
+      domains: ["billing", "policy"],
+      sentiment: "neutral",
+      confidence: 0.9,
+      summary: "Customer requests a refund of an annual Growth subscription renewal charge paid 45 days ago.",
+      keyEvidence: ["annual Growth subscription renewed 45 days ago", "$3,564.00 renewal charge", "request a refund of that charge"],
+    }),
+    billing_agent_finding: JSON.stringify({
+      agentKey: "billing",
+      summary: "Single succeeded subscription charge of $3,564.00, 45 days ago; no duplicate or payment issue.",
+      evidence: ["One succeeded charge of $3,564.00, 45 days ago", "Automated duplicate-charge analysis: no duplicates"],
+      confidence: 0.9,
+      policyReferences: [],
+      flags: ["no_billing_issue_found"],
+    }),
+    policy_agent_finding: JSON.stringify({
+      agentKey: "policy",
+      summary: "Charge is outside the 14-day condition and matches no other explicit condition; needs Billing Ops review, not an automatic denial.",
+      evidence: [
+        "Days since most recent charge: 45",
+        "Ordinary subscription charge: not a duplicate, not usage-based, no downgrade mentioned",
+      ],
+      confidence: 0.9,
+      policyReferences: [{ slug: "refund-policy", title: "Refund Policy" }],
+      flags: [],
+      policyDecision: {
+        applicablePolicy: { slug: "refund-policy", title: "Refund Policy" },
+        decision: "requires_review",
+        justification:
+          "The charge is 45 days old, outside the 14-day condition, and no other explicit condition applies; the Refund Policy requires Billing Ops approval and says to mark it requires_review rather than auto-deny.",
+        conditionsMet: [],
+        conditionsUnmet: ["within 14 days of the charge"],
+      },
+    }),
+    response_agent_reply: JSON.stringify({
+      body: "Thanks for getting in touch. Because this charge is outside our standard 14-day window, I can't decide it directly, so I've passed your request to our Billing Operations team for review. They'll follow up with you once they've looked at the details.",
+      tone: "neutral",
+      nextSteps: ["Billing Operations will review the request and follow up"],
     }),
   },
 };

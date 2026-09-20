@@ -71,6 +71,13 @@ describe("selectAgents", () => {
     expect(result).toEqual(["billing", "policy", "response"]);
   });
 
+  it("out-of-window refund: billing + policy + response, like every refund_request", () => {
+    const result = selectAgents(classification({ intent: "refund_request", domains: ["billing", "policy"] }));
+    expect(result).toEqual(
+      SCENARIOS.find((s) => s.key === "out-of-window-refund")!.expectedOutcome.expectedAgents,
+    );
+  });
+
   it("failed payment: billing + response only", () => {
     const result = selectAgents(classification({ intent: "failed_payment", domains: ["billing"] }));
     expect(result).toEqual(

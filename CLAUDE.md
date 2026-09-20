@@ -26,7 +26,7 @@ applies with no "currently stubbed" asterisk.
    `src/lib/orchestrator/`. See DECISIONS.md for why.
 2. **Dynamic agent selection is load-bearing, not decorative.** The
    orchestrator must never invoke every specialist agent for every ticket.
-   `selectAgents()` is pure and unit-tested against all 10 curated
+   `selectAgents()` is pure and unit-tested against all 11 curated
    scenarios — changes to routing logic must keep those tests passing or
    deliberately update the scenario's expected outcome (with justification).
 3. **Structured outputs only.** Every AI-produced artifact (classification,
@@ -51,7 +51,7 @@ applies with no "currently stubbed" asterisk.
    `src/lib/synthetic/rng.ts` (seed constant in the same file). Never use
    `Math.random()`, unseeded `faker` calls, or wall-clock time in seed data.
    `faker.seed(SEED)` must be called before any faker usage.
-7. **Evaluation is a first-class feature, not an afterthought.** The 10
+7. **Evaluation is a first-class feature, not an afterthought.** The 11
    curated tickets in `prisma/data/scenarios.ts` carry hand-authored
    expected outcomes. Any change to orchestrator behavior should be checked
    against these scenarios (see EVALUATION.md).

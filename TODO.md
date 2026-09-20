@@ -103,7 +103,7 @@ DECISIONS.md. This is what's left.
   charge at or before them). With refund timing now measured to the request time (DECISIONS.md,
   "Reference time"), the Policy agent prints "n/a" for a ticket whose account
   has no charge at or before it, which is a correct reading of incoherent
-  data. It does not affect the 10 curated scenarios, which are coherent by
+  data. It does not affect the 11 curated scenarios, which are coherent by
   construction. Fix by generating charges relative to the ticket, or creating
   tickets after the charge they concern; deliberately not changed here so the
   data was not adjusted to hide it.

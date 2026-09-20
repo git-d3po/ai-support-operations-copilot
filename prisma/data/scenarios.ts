@@ -2,7 +2,7 @@ import type { EvaluationExpectedOutcome } from "@/lib/ai/schemas";
 import type { Plan } from "./products";
 
 /**
- * The 10 curated demonstration tickets. Each one is grounded in specific,
+ * The 11 curated demonstration tickets. Each one is grounded in specific,
  * hand-authored account/billing/conversation data so that a correct AI
  * analysis is actually determinable — these are what EVALUATION.md scores
  * the orchestrator against, not just a UI feature list.
@@ -398,6 +398,40 @@ export const SCENARIOS: ScenarioSeed[] = [
       expectedEscalation: false,
       expectedAction: "refund_customer",
       notes: "Two independent, resolvable issues from one upgrade: a confirmed duplicate proration charge (fast-path refund) and an automation issue needing the standard technical workaround. Neither requires escalation on its own.",
+    },
+  },
+  {
+    key: "out-of-window-refund",
+    description:
+      "Refund requested for an ordinary annual subscription charge 45 days old: outside the 14-day condition, inside 90 days, and matching no other explicit refund condition.",
+    customer: {
+      name: "Priya Raman",
+      email: "priya@lumenworks.io",
+      company: "Lumenworks",
+      timezone: "America/Chicago",
+      locale: "en-US",
+    },
+    account: { plan: "growth", status: "active", mrrCents: 29700, riskScore: 15 },
+    subscription: { status: "active", startedDaysAgo: 410, renewsInDays: 320 },
+    invoices: [{ status: "paid", amountCents: 356400, issuedDaysAgo: 45, dueDaysAgo: 45, paidDaysAgo: 45 }],
+    transactions: [{ type: "charge", status: "succeeded", amountCents: 356400, occurredDaysAgo: 45, invoiceIndex: 0 }],
+    ticket: { subject: "Refund request for annual subscription charge", channel: "email", priority: "medium" },
+    messages: [
+      {
+        author: "customer",
+        authorName: "Priya Raman",
+        body: "Our annual Growth subscription renewed 45 days ago and the $3,564.00 renewal charge has been paid. We would like to request a refund of that charge.",
+        sentDaysAgo: 0,
+      },
+    ],
+    expectedOutcome: {
+      expectedIntent: "refund_request",
+      expectedAgents: ["billing", "policy", "response"],
+      expectedPolicySlug: "refund-policy",
+      expectedEscalation: true,
+      expectedAction: "escalate",
+      notes:
+        "A refund request for an ordinary subscription charge 45 days old. It is outside Refund Policy condition 1 (14 days) and well under the 90-day mark on either reading of the policy's exception, so the direct-denial exception does not apply. It is not a duplicate (condition 2), not usage-based (condition 3), and mentions no downgrade (condition 4), so it falls under the catch-all: outside these conditions, the request requires Billing Ops approval and is marked requires_review rather than auto-denied. resolveOutcome() maps a requires_review Policy decision to an escalation to billing_ops. This is the end-to-end coverage of that path; the condition-4 and over-90-day cases are deliberately not represented (see DECISIONS.md).",
     },
   },
 ];

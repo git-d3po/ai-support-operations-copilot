@@ -6,7 +6,7 @@ defines what's measured, how, and its current implementation status.
 
 ## Curated scenarios
 
-`prisma/data/scenarios.ts` defines 10 tickets, each grounded in specific,
+`prisma/data/scenarios.ts` defines 11 tickets, each grounded in specific,
 hand-authored account/billing/conversation data so a correct AI analysis is
 actually determinable:
 
@@ -22,6 +22,7 @@ actually determinable:
 | `suspicious-activity` | Security always escalates, regardless of other findings |
 | `ambiguous-request` | System correctly does *less* (no specialist agents) when there's nothing to investigate |
 | `multi-domain` | Two independent resolvable issues in one ticket, no escalation needed |
+| `out-of-window-refund` | Policy marks an ordinary subscription refund 14-90 days after the charge `requires_review`, so it escalates to Billing Ops instead of being auto-denied (the Refund Policy's catch-all) |
 
 Each scenario carries an `expectedOutcome` (`EvaluationExpectedOutcomeSchema`
 in `src/lib/ai/schemas.ts`): expected intent, expected agents, expected
@@ -197,6 +198,7 @@ expectations. No expectation was changed.
 | `suspicious-activity` | `account_security` | An unrecognized login and an unrecognized API key | `account_security` | consistent |
 | `ambiguous-request` | `general_inquiry` | No identifiable issue | `general_inquiry` | consistent |
 | `multi-domain` | `billing_question` | A duplicate proration charge (`duplicate_charge`, tier 2) and broken automations (`technical_issue`, tier 3) | `duplicate_charge` (tier 2 outranks tier 3; `billing_question` is not eligible **because clause 1 designates it a fallback**, a specification decision) | **inconsistent under this specification** |
+| `out-of-window-refund` | `refund_request` | A refund request for a charge outside every explicit condition | `refund_request` | consistent |
 
 Notes on the audit:
 
@@ -237,7 +239,7 @@ specific `OrchestrationRun` that was scored.
 
 ## Current status (Phase 2)
 
-- All 10 scenarios exist, are seeded, and their `expectedOutcome` values are
+- All 11 scenarios exist, are seeded, and their `expectedOutcome` values are
   schema-validated (`tests/unit/schemas.test.ts`).
 - **The full pipeline is genuinely model-backed**: `classifyTicket()`, all
   5 specialist agents, and `resolveOutcome()` are real (see
@@ -260,7 +262,7 @@ specific `OrchestrationRun` that was scored.
   ticket — it demonstrates the mechanism works, not that the AI's
   judgment is correct. Only a real evaluation run measures that.
 - **`npm run eval:dry-run` goes further: it runs the full evaluation
-  suite — all 10 scenarios, through the real orchestrator and scorer —
+  suite — all 11 scenarios, through the real orchestrator and scorer —
   against a deterministic fixture provider.** This is a harness-validation
   tool, not a real evaluation; see "Dry-run harness validation," below,
   for what it proved and why its results are tagged and rendered as
@@ -270,7 +272,7 @@ specific `OrchestrationRun` that was scored.
 
 `npm run eval:dry-run` (`scripts/runEvaluationDryRun.ts` +
 `scripts/evaluationDryRunFixtures.ts`) registers a comprehensive,
-hand-authored fixture provider covering all 10 curated scenarios and runs
+hand-authored fixture provider covering all 11 curated scenarios and runs
 `runEvaluationSuite()` against it — the *exact same function* a real
 evaluation uses, with the model provider swapped for a deterministic
 fixture. Its purpose is narrow and specific: prove the orchestrator →
@@ -281,14 +283,16 @@ DECISIONS.md, "Honestly recording which provider actually served a
 call") — rendered with a purple "simulated" badge/banner throughout the
 app, and excluded entirely from AI Operations' live metrics.
 
-9 of the 10 fixture scenarios are answered "correctly" (matching their
-`expectedOutcome` exactly); the 10th (`known-technical-issue`) is
+10 of the 11 fixture scenarios are answered "correctly" (matching their
+`expectedOutcome` exactly); the other (`known-technical-issue`) is
 answered **deliberately wrong on purpose** — a misclassification that
 leads to an incorrect resolution — specifically to prove the scorer
 detects and reports a real failure through the actual pipeline, not just
 inside an isolated unit test.
 
-**Actual results from the last run:**
+**Actual results from the last run** (recorded on the original 10-scenario suite, before
+`out-of-window-refund` was added; that scenario has a fixture that answers it
+correctly but is not in this table):
 
 | Scenario | Result | Score |
 |---|---|---|
@@ -328,7 +332,9 @@ pricing table, without making any live call:
   classifier, since agent selection is a set) × 2 attempts (the retry
   built into `callWithStructuredRetry`, `src/lib/ai/parse.ts`) × 10
   tickets = 120 — a deliberately conservative worst case, not a realistic
-  expectation.
+  expectation. (Computed for the original 10 scenarios; `out-of-window-refund`
+  adds 4 nominal calls — classifier, billing, policy, response — for 39
+  across all 11.)
 - **Estimated cost**: roughly **$0.10–$0.15** for the nominal 35-call run
   (~$0.02 across the Haiku-routed classifier/billing/policy calls, ~$0.09
   across the Sonnet-routed technical/risk/response calls), with a generous
@@ -344,7 +350,7 @@ pricing table, without making any live call:
 ```bash
 npm run db:eval:setup            # once: create + seed the separate eval.db (re-running resets it)
 npm run eval -- duplicate-billing   # exactly one scenario (recommended first live call)
-npm run eval                     # all 10 scenarios
+npm run eval                     # all 11 scenarios
 npm run dev:eval                 # view the results (dev server on eval.db)
 ```
 
@@ -403,7 +409,7 @@ tested branch-by-branch in `score.test.ts`:
 
 ## Future extensions (not committed to yet)
 
-- Expanding beyond 10 curated cases if they stop catching real regressions.
+- Expanding beyond the current 11 curated cases if they stop catching real regressions.
 - A held-out scenario set (never referenced during development) if the
   curated 10 start to feel "trained to."
 - Tracking evaluation score history over time as the orchestrator changes,

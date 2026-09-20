@@ -18,7 +18,7 @@ afterEach(async () => {
  * CLAUDE.md/DECISIONS.md: no real credential is ever used in automated
  * tests). This exercises the suite's most important safety property: it
  * never fabricates a scored result when the pipeline couldn't actually
- * run, and it never crashes partway through the 10 curated cases.
+ * run, and it never crashes partway through the 11 curated cases.
  */
 describe("runEvaluationSuite (real orchestrator, no live provider configured)", () => {
   it("records every curated case as failed-to-run rather than inventing a score", async () => {

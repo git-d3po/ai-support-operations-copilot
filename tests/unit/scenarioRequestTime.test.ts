@@ -47,8 +47,8 @@ describe("curated scenarios: request time and charge time produce the documented
 
   const refundScenarios = SCENARIOS.filter((s) => s.expectedOutcome.expectedPolicySlug === "refund-policy");
 
-  it("covers the refund scenarios (legitimate-refund and prohibited-refund)", () => {
-    expect(refundScenarios.map((s) => s.key).sort()).toEqual(["legitimate-refund", "prohibited-refund"]);
+  it("covers the refund scenarios (legitimate-refund, out-of-window-refund and prohibited-refund)", () => {
+    expect(refundScenarios.map((s) => s.key).sort()).toEqual(["legitimate-refund", "out-of-window-refund", "prohibited-refund"]);
   });
 
   it.each(refundScenarios.map((s) => [s.key, s] as const))(
@@ -71,9 +71,10 @@ describe("curated scenarios: request time and charge time produce the documented
     },
   );
 
-  it("legitimate-refund is 5 days (inside the 14-day window) and prohibited-refund is 21, wherever the anchor sits", () => {
+  it("legitimate-refund is 5 days (inside the 14-day window), prohibited-refund is 21 and out-of-window-refund is 45, wherever the anchor sits", () => {
     const byKey = Object.fromEntries(SCENARIOS.map((s) => [s.key, derivedDayCount(s)]));
     expect(byKey["legitimate-refund"]).toBe(5);
     expect(byKey["prohibited-refund"]).toBe(21);
+    expect(byKey["out-of-window-refund"]).toBe(45);
   });
 });

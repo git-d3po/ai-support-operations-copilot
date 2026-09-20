@@ -39,11 +39,11 @@ test("AI Operations page renders real, database-backed ticket volume", async ({ 
   await expect(page.getByText("Ticket volume by status")).toBeVisible();
 });
 
-test("Evaluations page lists all 10 curated scenarios", async ({ page }) => {
+test("Evaluations page lists all 11 curated scenarios", async ({ page }) => {
   await page.goto("/evaluations");
   await expect(page.getByRole("heading", { name: "Evaluations" })).toBeVisible();
   const rows = page.locator("tbody tr");
-  await expect(rows).toHaveCount(10);
+  await expect(rows).toHaveCount(11);
 });
 
 test("Knowledge page lists seeded policies and product docs", async ({ page }) => {

@@ -67,7 +67,7 @@ not a safe default.
 - **AI Operations** — live/demo operational metrics: ticket volume,
   automation/containment rate, escalation rate, per-agent usage, latency,
   estimated cost, failure/retry rate. Every number is a real query result.
-- **Evaluations** — the 10 curated scenarios, their expected outcomes, and
+- **Evaluations** — the 11 curated scenarios, their expected outcomes, and
   scored results across classification/routing/policy/escalation/
   resolution/evidence-quality dimensions (EVALUATION.md).
 - **Knowledge** — the actual policy documents and product documentation

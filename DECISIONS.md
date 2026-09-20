@@ -2145,3 +2145,106 @@ defect should govern a `failed_payment` ticket, if a real mixed ticket (a failed
 payment plus a separate technical problem) is classified `failed_payment` and its
 technical part is dropped, or if Technical is given an abstention path or account
 state, which would change why the precedence is needed.
+
+---
+
+## 2026-09-20 — Add `out-of-window-refund`: end-to-end coverage of the Refund Policy's 14-90 day `requires_review` path
+
+**Context:** A read-only coverage audit of the refund scenarios found one meaningful
+gap. The Refund Policy says requests outside its explicit conditions "require Billing
+Ops approval and should be marked `requires_review` rather than auto-denied", except
+where a request is "clearly outside condition 1 by more than 90 days", which "may" be
+denied directly. The Escalation Policy independently routes "refund requests outside
+the standard Refund Policy conditions" to Billing Ops. After `prohibited-refund` was
+redesigned around condition 3 (see the entry above), no scenario reached that catch-all:
+the mapping from `requires_review` to an escalation to `billing_ops` was covered only by
+unit tests (`resolve.test.ts`), which cannot show whether a model marks such a request
+`requires_review` or over-denies or over-approves it. Most real refund requests fall
+outside 14 days, so this is the most common shape of refund the suite did not exercise.
+
+**Decision made:** Add exactly one curated scenario, `out-of-window-refund`, appended
+last in `prisma/data/scenarios.ts`, and no other. Expected outcome: intent
+`refund_request`; agents `billing`, `policy`, `response`; policy `refund-policy`;
+Policy decision `requires_review`, which `resolveOutcome()` (rule 3) turns into
+action `escalate`, escalation true, target `billing_ops`. No policy text, resolution
+rule, scorer, threshold, prompt, routing or classifier change was made.
+
+**The facts, and why they map unambiguously to `requires_review`:** An annual Growth
+subscription renewal charge of $3,564.00 (12 x the plan's $297.00 monthly rate), paid
+45 days before the request, and a message that says so and asks to "request a refund of
+that charge".
+- 45 days is outside condition 1's 14 days with a wide margin, so the 14/15-day boundary
+  and the whole-day rounding in the day count play no part.
+- It is under 90 days on every reading of the exception: 45 days after the charge, and
+  31 days beyond the 14-day window, so the direct-denial exception cannot apply.
+- It matches no other explicit condition: one charge (no duplicate, condition 2), no
+  usage-based `reason` (condition 3), and no downgrade or cancellation wording
+  (condition 4). It therefore falls under the catch-all, whose instruction not to
+  auto-deny is explicit. The request is 45 days after the charge on the seeded request
+  time (`Ticket.createdAt`), so the Policy agent's day count is deterministic.
+- The charge is annual on purpose. A monthly plan charged 45 days ago would also have a
+  charge inside the window, and the Policy agent measures from the most recent charge.
+- The message gives no reason for the refund. That avoids introducing a fact that could
+  invoke another condition, and it avoids the "we're switching tools" phrasing: the
+  seeded background template for that phrasing answers with a processed refund "per our
+  policy", which conflicts with the catch-all, so a scenario built on it would inherit
+  the seed world's inconsistency.
+
+**Coverage this preserves and adds:** `legitimate-refund` (condition 1 approval),
+`prohibited-refund` (condition 3 denial, the only scenario expecting `deny_request`) and
+the duplicate-charge scenarios are unchanged. The new scenario is not a second
+`deny_request` and not a second approval. It is the only scenario whose Policy outcome
+is `requires_review`, and the only one that escalates to Billing Ops.
+
+**Deliberately still not covered:**
+- **Condition 4 (mid-cycle downgrade).** No agent prompt renders subscription, plan or
+  renewal data, so "mid-cycle" and "current billing period" would rest only on the
+  customer's words. `legitimate-refund` already contains "drop back to Starter", which
+  invites cross-reading with condition 1. A clean scenario would have to sit past 14 days
+  where the catch-all also plausibly applies. It would also only add another
+  `deny_request`. It becomes worthwhile only if agents are given subscription state.
+- **Requests more than 90 days past condition 1.** The policy says "may", so both
+  `requires_review` and a direct denial comply. A single-action scorer cannot represent
+  that, and the scorer was not changed to accept alternatives.
+- **The "fewer than 5 login sessions" criterion.** No login data exists anywhere in the
+  schema or seed, so it cannot be tested against data.
+
+**Repository consistency:** The count moves from 10 to 11 only where a line specifically
+described the curated scenarios (README, CLAUDE.md, PRODUCT_SPEC, ARCHITECTURE, the
+`EVALUATION.md` current-status text and tables, the runbook, the dry-run and fixture
+headers, one comment each in `scenarios.ts`, `ticketTemplates.ts` and the integration
+test, and the e2e count assertion). The dry-run fixture set gained an entry that answers
+the new scenario correctly (10 of 11 are correct; `known-technical-issue` remains the
+deliberately wrong one). Historical records were annotated and not rewritten: the dry-run
+results table (recorded on 10 scenarios), the pre-flight call-count estimate (computed for
+10; the new scenario adds 4 nominal calls, for 39), and the earlier entries of this log.
+Tests added or updated: a new `outOfWindowRefundScenario` suite (registration and order,
+the fact constraints, request-time determinism including a fake future clock, and the
+scenario's own fixture through the real orchestrator and scorer, expecting 1.00), a
+`selectAgents` routing case, and the refund list and day counts in `scenarioRequestTime`.
+The new tests were confirmed to fail when the charge age or the wording is broken.
+
+**Seed side effects, measured on a scratch database only:** `seed.ts` draws one random
+value per curated scenario before generating any background customer, so any added
+scenario shifts the random stream for the background data. Appending last keeps the 10
+existing scenarios' seeded data identical, which was verified field by field (10 of 10
+identical), with invoice numbers excluded: they come from the last characters of a random
+`cuid()` account id and already differ between any two seeds of the same code. The
+background dataset does change, deterministically: 101 customers, 92 tickets (81 of them
+background) and 435 invoices, against 100, 89 (79) and 432 before. Nothing in the tests or
+docs pinned the old totals apart from the seed summary quoted in `ARCHITECTURE.md`, which
+was updated.
+
+**Not done / limits:** No live evaluation was run, and no project database was reseeded.
+`dev.db` and `eval.db` still hold the 10-scenario seed. Reseeding `eval.db` (the
+documented `npm run db:eval:setup`) erases its 10 recorded live results, so those should
+be kept first. `npm run test:e2e` was not run, because it reseeds `dev.db`; its row-count
+assertion was updated to 11 and is unexecuted. The scenario's outcome under a live model is
+unmeasured: a model could still choose otherwise, and the classifier could still return
+domains that add an agent or a different intent, as it has on other refund scenarios.
+
+**When we'd reconsider:** If a live run shows the model systematically denying or
+approving this request instead of marking it `requires_review`, investigate the Policy
+agent's handling of the catch-all as a separate finding. If agents gain subscription state,
+reconsider a condition-4 scenario. If the policy's over-90-day wording is made
+unambiguous, reconsider representing it.
