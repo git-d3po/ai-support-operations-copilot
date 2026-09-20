@@ -1894,3 +1894,133 @@ under 90.
 **When we'd reconsider:** If live runs show the model systematically choosing
 `requires_review` for an acknowledged usage-based charge, investigate the Policy
 agent's handling of condition 3 as a separate finding.
+
+---
+
+## 2026-09-19 — Reference time: business-derived time facts come from persisted event data, not the wall clock
+
+**Context:** The seeded world is deterministic (every curated ticket, invoice
+and charge is anchored to `2026-09-18T12:00:00.000Z`), but the Policy agent
+computed "days since the most recent successful charge" with `new Date()`. The
+printed value therefore drifted with the day of a run: it equalled the fixture's
+own offset only on the anchor date. `legitimate-refund` (charge 5 days before the
+request) would have printed more than 14 from about 2026-09-28 and fallen outside
+Refund Policy condition 1 although none of its seeded facts had changed. A
+read-only audit confirmed this was the only business-derived fact in `src/` that
+read the clock (the other clock reads are latency timing and run bookkeeping in
+`modelClient.ts` and `persist.ts`), and that the data already held the right
+time: `Ticket.createdAt` is seeded at the anchor for every curated ticket, but
+`loadTicketContext` discarded it. The same audit found that a ticket can be
+(re-)analyzed any time after it was created ("Run AI analysis again"), so the
+moment of analysis and the moment of the request are already different in normal
+use.
+
+**Three kinds of time, kept distinct:**
+
+- **Event time** is when something happened, and is stored: `Ticket.createdAt`,
+  `Message.sentAt`, `Transaction.occurredAt`, `Invoice.issuedAt`. It is the only
+  kind that any business fact in this codebase depends on.
+- **Evaluation reference time** is the instant a case is judged as of. For refund
+  timing it is not a separate input: it collapses into the request's event time.
+  There is no consumer today that needs it to differ.
+- **Wall-clock time** is the actual current time. It is used only at the
+  persistence edge, to record when a run happened (`persist.ts`), and for latency
+  measurement. Agents never read it.
+
+**Options considered:** (a) derive the reference time from persisted event data
+(the ticket's own timestamp); (b) pass an explicit injected `now` through the
+context; (c) freeze the clock in the evaluation runner only; (d) change the
+scenario's dates; (e) re-anchor and reseed the database before every evaluation.
+
+**Decision made:** (a). `TicketDataContext` gains `requestedAt: Date`, populated
+by `loadTicketContext` from the ticket's persisted `createdAt`. The Policy agent
+prints the number of days from the most recent successful charge **at or before**
+`requestedAt` to `requestedAt`, and the prompt now says so explicitly and names
+the request time. `mostRecentSucceededCharge(transactions, asOf?)` takes an
+optional bound and behaves exactly as before without it. A charge made after the
+request cannot be the charge the request is about, so with no earlier charge the
+prompt prints the existing "n/a" form. Nothing else in the Policy agent changed.
+
+**Why refund timing is measured to the request, not to the current time:** (1) A
+customer should not lose eligibility to support latency. The seeded Support SLA
+Policy allows a first response of up to 24 business hours on the Starter plan, so
+a request made on day 13 and handled on day 15 is routine, and measuring to
+"now" would penalize it. (2) Re-running an analysis must not change the answer;
+measured to "now", clicking "Run AI analysis again" tomorrow could flip a
+decision the customer was already owed. (3) The customer's own framing is the
+request time ("upgraded 5 days ago"). **This is an interpretation.** The Refund
+Policy says "within 14 days of a charge" and the "more than 90 days" exception
+without naming the second endpoint, so the wording is silent. The policy text was
+not modified; clarifying it is a separate decision.
+
+**Why `Ticket.createdAt` is the anchor:** It is the one authoritative timestamp
+on the ticket entity, it already exists and is persisted, and production
+ingestion sets it, so production and evaluation read the same field and need no
+separate wiring. `Message.sentAt` of the latest customer message is worse: a
+customer who asks on day 13 and chases on day 20 would be judged at day 20.
+
+**Why a universal injected `now` was not introduced:** Nothing in the repository
+needs "how long has this been open". The Support SLA Policy is text only and no
+code computes against it. Every fact that depends on time is a function of event
+data, so an injected clock would have no consumer and would only add a parameter
+to `analyzeTicket`, `runEvaluationSuite`, both runners and the UI action. This
+project's rule is not to add abstractions for requirements that do not exist. If
+an age-based feature is built later (SLA breach, time waiting), an explicit
+`asOf` should be added then, defaulting to the wall clock in production and
+pinned in evaluation.
+
+**Why the alternatives were rejected:** (c) Freezing the clock in the runner
+would pin evaluations but leave the UI and the seeded demo drifting, and the
+evaluation would no longer exercise the path production runs. (d) Editing the
+scenario's dates only postpones the failure (any offset eventually crosses the
+boundary as the wall clock advances) and leaves the defect in place for every
+other time-dependent scenario.
+(e) Re-anchoring and reseeding per run breaks the byte-reproducible seed this
+project requires, and re-seeding `eval.db` wipes its recorded runs.
+
+**What was and was not changed:** Changed: `context.ts`, `policyAgent.ts`
+(prompt wording and the one date computation), `evidence.ts` (optional bound),
+and the test fixture default. Not changed: scenario data (`legitimate-refund` and
+`prohibited-refund` included), expectations, the scorer, thresholds, the Refund
+Policy text, the seed, the schema (no migration), routing, resolution, and the
+billing, risk and technical agents. `scripts/evaluationDryRunFixtures.ts` needed
+no change; its stated day counts ("5", "21") are now what the real path prints on
+any date, and a test asserts it.
+
+**Regression coverage:** the real Policy prompt path for a request years in the
+past (5 days, and the 14/15-day boundary), a later charge excluded, the "n/a"
+cases, `loadTicketContext` returning `requestedAt` equal to `Ticket.createdAt`
+(including after later messages and edits), and a scenario-level check that each
+refund scenario's stated day count equals the derived one. The guard against
+reintroducing a clock is behavioral, not a source scan: every registered agent is
+run on one context under two very different system clocks, and its prompts must
+be identical.
+
+**Known limitations:** (1) A refund requested late in a thread is anchored to
+first contact, not to the message that asked for it. This favors the customer
+slightly and is left to human review; anchoring to the actual request message
+would need the model to identify it. (2) The background seed is not temporally
+coherent: tickets are created 0-180 days before the anchor while each account's
+invoices and charges are laid out at 30-day multiples independently, so some
+seeded charges post-date their own ticket (measured on a scratch seed: 23 of
+79 background tickets have no charge at or before them). Under this decision
+those tickets print "n/a" rather than a negative or drifting count. That is an honest reading
+of the data, but it is unrepresentative demo data, and it does not touch any of
+the 10 curated scenarios. It is tracked in TODO.md as a separate P2, and the seed
+was deliberately not changed to hide it. (3) `daysSince` rounds to whole days, so
+a gap of 14.4 days prints 14. Every curated scenario uses whole-day offsets, so
+this does not affect them, but the rounding rule is unchanged and unexamined.
+
+**Supersedes:** the closing sentence of the prohibited-refund entry above ("The
+Policy agent computes days since the charge from the wall clock, so the printed
+value depends on the day of a run") is no longer true. The printed value is now
+21 on every date.
+
+**Not done / limits:** No live evaluation was run, the databases were not
+reseeded, and no network call was made. Integration tests and a seed check ran
+only against scratch copies. Both `dev.db` and `eval.db` still hold the earlier
+`prohibited-refund` data and must be reseeded before a live run.
+
+**When we'd reconsider:** When a feature needs the current time rather than the
+request time (SLA age, follow-up staleness), or if a policy is clarified to
+count from a different endpoint.

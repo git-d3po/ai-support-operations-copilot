@@ -48,8 +48,13 @@ export function daysSince(date: Date, now: Date): number {
   return Math.round((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function mostRecentSucceededCharge(transactions: Transaction[]): Transaction | null {
-  const charges = transactions.filter((t) => t.type === "charge" && t.status === "succeeded");
+/** With `asOf` (the customer's request time), only charges at or before that
+ * instant count: a charge made after a request cannot be what the request is
+ * about. Without it, behavior is unchanged. */
+export function mostRecentSucceededCharge(transactions: Transaction[], asOf?: Date): Transaction | null {
+  const charges = transactions.filter(
+    (t) => t.type === "charge" && t.status === "succeeded" && (!asOf || t.occurredAt <= asOf),
+  );
   if (charges.length === 0) return null;
   return charges.reduce((latest, tx) => (tx.occurredAt > latest.occurredAt ? tx : latest));
 }

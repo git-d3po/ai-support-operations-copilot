@@ -9,6 +9,13 @@ import { db } from "@/lib/db";
  * data and re-fetching per agent would just be N near-identical queries.
  */
 export interface TicketDataContext {
+  /** When the customer made the request: the ticket's persisted `createdAt`
+   * (first contact). Business-derived time facts — e.g. days from a charge
+   * to a refund request — are measured to this instant, never to the wall
+   * clock, so a ticket analyzed (or re-analyzed) days later, or replayed in
+   * an evaluation, yields the same facts. See DECISIONS.md ("Reference time:
+   * business-derived time facts come from persisted event data"). */
+  requestedAt: Date;
   customer: {
     name: string;
     email: string;
@@ -82,6 +89,7 @@ export async function loadTicketContext(ticketId: string): Promise<LoadedTicket>
   const account = ticket.customer.account;
 
   const accountContext: TicketDataContext = {
+    requestedAt: ticket.createdAt,
     customer: {
       name: ticket.customer.name,
       email: ticket.customer.email,

@@ -23,14 +23,17 @@ import type { TicketDataContext } from "../context";
 function buildRequest(context: AgentContext, retrievedPolicies: TicketDataContext["policies"], retryContext?: string) {
   const { accountContext } = context;
   const duplicates = detectDuplicateCharges(accountContext.transactions);
-  const mostRecentCharge = mostRecentSucceededCharge(accountContext.transactions);
-  const daysSinceCharge = mostRecentCharge ? daysSince(mostRecentCharge.occurredAt, new Date()) : null;
+  // Measured to the customer's request time (persisted Ticket.createdAt), not
+  // the wall clock — see TicketDataContext.requestedAt and DECISIONS.md.
+  const { requestedAt } = accountContext;
+  const mostRecentCharge = mostRecentSucceededCharge(accountContext.transactions, requestedAt);
+  const daysFromChargeToRequest = mostRecentCharge ? daysSince(mostRecentCharge.occurredAt, requestedAt) : null;
 
   const system = buildSystemPrompt(
     "policy_agent_finding",
     `You are the Policy Agent for Halcyon, a B2B SaaS company. Given the ticket and the specific policy document(s) retrieved below (there may be none — if so, say so and set policyDecision to null), decide whether the requested action is permitted.
 
-Ground your decision ONLY in the policy text provided and the concrete evidence provided (dates, amounts, days-since-charge) — do not invent policy conditions that aren't written in the retrieved policy text, and do not do your own date arithmetic: a pre-computed "days since most recent charge" value is provided below when relevant, trust it rather than recomputing from the raw dates.
+Ground your decision ONLY in the policy text provided and the concrete evidence provided (dates, amounts, days from charge to request) — do not invent policy conditions that aren't written in the retrieved policy text, and do not do your own date arithmetic: a pre-computed count of the days between the most recent successful charge and the customer's request (measured to when the customer made the request, not to today's date) is provided below when relevant, trust it rather than recomputing from the raw dates.
 
 If no retrieved policy actually applies to this ticket, set "policyDecision" to null and explain why in "summary" — do not force-fit an unrelated policy. You may ONLY cite a slug that appears in the "Retrieved policies" section below — never a policy you know of but that wasn't retrieved for this call.
 
@@ -53,7 +56,7 @@ ${formatInvoices(accountContext.invoices)}
 ${formatTransactions(accountContext.transactions)}
 
 Pre-computed facts:
-- Days since most recent successful charge: ${daysSinceCharge ?? "n/a (no charges on file)"}
+- Days from the most recent successful charge to the customer's request (request made ${requestedAt.toISOString()}): ${daysFromChargeToRequest ?? "n/a (no successful charge on file at or before the request)"}
 - Confirmed duplicate charges detected: ${duplicates.length > 0 ? `yes, ${duplicates.length} pair(s)` : "no"}
 ${retryContext ? `\n${retryContext}` : ""}`;
 

@@ -95,6 +95,18 @@ DECISIONS.md. This is what's left.
   support — irrelevant since this project only uses the SQLite adapter).
   Revisit if `npm audit` ever flags something in a package actually used
   at runtime.
+- **P2: the background seed is not temporally coherent.** `prisma/seed.ts`
+  creates each background ticket 0-180 days before the anchor
+  (`createdDaysAgo`) but lays out that account's invoices and charges at
+  30-day multiples independently of it, so some charges post-date their own
+  ticket (measured on a scratch seed: 23 of 79 background tickets have no
+  charge at or before them). With refund timing now measured to the request time (DECISIONS.md,
+  "Reference time"), the Policy agent prints "n/a" for a ticket whose account
+  has no charge at or before it, which is a correct reading of incoherent
+  data. It does not affect the 10 curated scenarios, which are coherent by
+  construction. Fix by generating charges relative to the ticket, or creating
+  tickets after the charge they concern; deliberately not changed here so the
+  data was not adjusted to hide it.
 - Remove the unused default Next.js `public/*.svg` assets once the UI
   phase replaces them with real assets (or confirms none are needed).
 

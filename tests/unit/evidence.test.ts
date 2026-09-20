@@ -109,6 +109,27 @@ describe("mostRecentSucceededCharge / mostRecentFailedCharge / mostRecentInvoice
     expect(mostRecentFailedCharge([tx({ status: "succeeded" })])).toBeNull();
   });
 
+  describe("with an asOf boundary (the customer's request time)", () => {
+    it("ignores a succeeded charge that occurred after the boundary", () => {
+      // Latest overall is 2026-01-05; as of 2026-01-03 the only earlier one is 2026-01-01.
+      const result = mostRecentSucceededCharge(transactions, new Date("2026-01-03T00:00:00Z"));
+      expect(result?.occurredAt).toEqual(new Date("2026-01-01T00:00:00Z"));
+    });
+
+    it("includes a charge that occurred exactly at the boundary", () => {
+      const result = mostRecentSucceededCharge(transactions, new Date("2026-01-05T00:00:00Z"));
+      expect(result?.occurredAt).toEqual(new Date("2026-01-05T00:00:00Z"));
+    });
+
+    it("returns null when every succeeded charge is after the boundary", () => {
+      expect(mostRecentSucceededCharge(transactions, new Date("2025-12-31T00:00:00Z"))).toBeNull();
+    });
+
+    it("behaves exactly as before when no boundary is given", () => {
+      expect(mostRecentSucceededCharge(transactions)?.occurredAt).toEqual(new Date("2026-01-05T00:00:00Z"));
+    });
+  });
+
   it("finds the most recent invoice", () => {
     const result = mostRecentInvoice([
       { number: "A", status: "paid", amountCents: 100, issuedAt: new Date("2026-01-01"), dueAt: new Date(), paidAt: null },
