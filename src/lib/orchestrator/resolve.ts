@@ -41,9 +41,11 @@ function average(numbers: number[]): number {
  * Policy: a failed classification or a Risk-recommended escalation always
  * wins, and so does a suspected account compromise (Account Security Policy,
  * enforced deterministically below); a Policy Agent decision governs
- * refund/deny outcomes; Technical's flags govern technical resolutions;
- * Billing's flags cover payment-status replies; anything left over falls
- * through to a confidence-based default.
+ * refund/deny outcomes; Technical's flags govern technical resolutions
+ * (except that, for a `failed_payment` ticket, Billing's payment-failed flag
+ * governs ahead of Technical's non-escalating flags); Billing's flags cover
+ * payment-status replies; anything left over falls through to a
+ * confidence-based default.
  */
 export function resolveOutcome(
   classification: TicketClassification,
@@ -187,6 +189,30 @@ export function resolveOutcome(
         targetTeam: "engineering",
         severity: "medium",
       },
+    };
+  }
+
+  // 6b. failed_payment is Billing-owned: when Billing flags a failed payment
+  // (its flag covers "the customer needs to act OR the system will auto-retry"),
+  // that flag governs the outcome even if Technical also ran. Technical is given
+  // only the ticket and product docs, never the invoice or subscription state,
+  // so its `auto_resolvable` / known-issue flags are documentation-only and cannot
+  // establish that an unpaid invoice is resolved. Placed after rule 6 on purpose:
+  // Technical's escalation still wins. Scoped to this intent; every other intent
+  // keeps rules 7-9 as they were. Same outcome as rule 9. See DECISIONS.md
+  // ("failed_payment is Billing-owned at resolution").
+  if (
+    classification.intent === "failed_payment" &&
+    billingFinding?.flags.includes(KNOWN_AGENT_FLAGS.PAYMENT_FAILED_AWAITING_CUSTOMER_ACTION)
+  ) {
+    return {
+      resolution: {
+        action: "reply_and_monitor",
+        summary: billingFinding.summary,
+        confidence: billingFinding.confidence,
+        requiresHumanReview: false,
+      },
+      escalation: null,
     };
   }
 

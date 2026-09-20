@@ -323,3 +323,130 @@ describe("runOrchestration (real pipeline, MockProvider)", () => {
     expect(outcome.escalation?.required).toBe(true);
   });
 });
+
+/**
+ * Orchestrator-level regression for the failed-payment live finding (DECISIONS.md,
+ * "failed_payment is Billing-owned at resolution"): the classifier added a
+ * `technical` domain to a failed-payment ticket, so BOTH Billing and Technical
+ * ran, and Technical's `auto_resolvable` used to override Billing's
+ * payment-failed flag. These drive the whole pipeline (classification ->
+ * selection -> agents -> resolution -> response) with both agents really
+ * running, which no earlier test did. Routing is asserted unchanged: Technical
+ * still runs; only which finding governs the outcome differs.
+ */
+describe("runOrchestration: failed_payment with both Billing and Technical running", () => {
+  const BILLING_SUMMARY = "Payment failed (insufficient funds); customer says the card was updated.";
+
+  const responses = (technical: { summary: string; flags: string[] }, replyCheck?: (userMessage: string) => void) => ({
+    ticket_classification: JSON.stringify({
+      intent: "failed_payment",
+      domains: ["billing", "technical"],
+      sentiment: "neutral",
+      confidence: 0.95,
+      summary: "Payment failed; customer has already updated their card.",
+      keyEvidence: ["payment failed", "updated my card on file"],
+    }),
+    billing_agent_finding: JSON.stringify({
+      agentKey: "billing",
+      summary: BILLING_SUMMARY,
+      evidence: ["Most recent failed charge: insufficient_funds"],
+      confidence: 0.95,
+      policyReferences: [],
+      flags: ["payment_failed_awaiting_customer_action"],
+    }),
+    technical_agent_finding: JSON.stringify({
+      agentKey: "technical",
+      summary: technical.summary,
+      evidence: ["Invoices & Billing FAQ: failed charges are retried on days 1, 3 and 7"],
+      confidence: 0.9,
+      policyReferences: [],
+      flags: technical.flags,
+    }),
+    response_agent_reply: (request: { messages: { content: string }[] }) => {
+      replyCheck?.(request.messages.at(-1)?.content ?? "");
+      return JSON.stringify({ body: "Thanks for updating your card.", tone: "neutral", nextSteps: [] });
+    },
+  });
+
+  const run = () =>
+    runOrchestration({
+      ticketId: "test-ticket",
+      ticketSummary: "Payment failed — updated my card, please retry",
+      conversation: [{ author: "customer", body: "My payment failed. I've already updated my card on file — do I need to do anything else?" }],
+      accountContext: makeAccountContext(),
+    });
+
+  it("Technical auto_resolvable no longer overrides Billing: reply_and_monitor, with both agents run", async () => {
+    let responseSawAction = "";
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider(
+        responses(
+          { summary: "Standard retry flow: failed charges are retried on days 1, 3 and 7.", flags: ["auto_resolvable"] },
+          (userMessage) => {
+            responseSawAction = userMessage;
+          },
+        ),
+      ),
+    );
+
+    const outcome = await run();
+
+    // Routing is unchanged: the classifier's technical domain still runs Technical.
+    expect(outcome.agentsInvoked).toEqual(["billing", "technical", "response"]);
+    expect(outcome.agentResults.map((r) => r.finding.agentKey)).toEqual(["billing", "technical", "response"]);
+    // Both findings were produced and are the ones under test.
+    const technical = outcome.agentResults.find((r) => r.finding.agentKey === "technical")!.finding;
+    expect(technical.flags).toContain("auto_resolvable");
+    // Billing owns the outcome.
+    expect(outcome.resolution.action).toBe("reply_and_monitor");
+    expect(outcome.resolution.summary).toBe(BILLING_SUMMARY);
+    expect(outcome.resolution.requiresHumanReview).toBe(false);
+    expect(outcome.escalation).toBeNull();
+    // The Response agent drafted from the Billing-owned resolution, not auto_resolve.
+    expect(responseSawAction).toContain("action=reply_and_monitor");
+  });
+
+  it("Technical requires_escalation still escalates to engineering, with both agents run", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider(
+        responses({
+          summary: "Documented defect blocks payment updates; the workaround was already tried.",
+          flags: ["known_issue_workaround_already_tried", "requires_escalation"],
+        }),
+      ),
+    );
+
+    const outcome = await run();
+
+    expect(outcome.agentsInvoked).toEqual(["billing", "technical", "response"]);
+    expect(outcome.resolution.action).toBe("escalate");
+    expect(outcome.resolution.requiresHumanReview).toBe(true);
+    expect(outcome.escalation?.targetTeam).toBe("engineering");
+  });
+
+  it("gives the same outcome as a classifier that returned only billing (Technical not run)", async () => {
+    registerProvider(
+      "anthropic",
+      createTaskMockProvider({
+        ...responses({ summary: "unused", flags: [] }),
+        ticket_classification: JSON.stringify({
+          intent: "failed_payment",
+          domains: ["billing"],
+          sentiment: "neutral",
+          confidence: 0.95,
+          summary: "Payment failed; customer has already updated their card.",
+          keyEvidence: ["payment failed"],
+        }),
+      }),
+    );
+
+    const outcome = await run();
+
+    expect(outcome.agentsInvoked).toEqual(["billing", "response"]);
+    expect(outcome.resolution.action).toBe("reply_and_monitor");
+    expect(outcome.resolution.summary).toBe(BILLING_SUMMARY);
+    expect(outcome.escalation).toBeNull();
+  });
+});

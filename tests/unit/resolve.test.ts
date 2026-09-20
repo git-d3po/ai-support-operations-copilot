@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveOutcome } from "@/lib/orchestrator/resolve";
 import { makeClassification } from "./testSupport/fixtures";
-import { EscalationDecisionSchema, ResolutionDecisionSchema, type AnyAgentFinding } from "@/lib/ai/schemas";
+import { EscalationDecisionSchema, ResolutionDecisionSchema, TICKET_INTENTS, type AnyAgentFinding } from "@/lib/ai/schemas";
 import { degradedRiskFinding } from "@/lib/orchestrator/agents/fallback";
 
 function billingFinding(overrides: Partial<AnyAgentFinding> = {}): AnyAgentFinding {
@@ -283,5 +283,156 @@ describe("resolveOutcome: account_security mandatory escalation to Trust & Safet
       const chosen = resolveOutcome(makeClassification({ intent }), false, [riskFinding(true, { targetTeam: "engineering" })]);
       expect(chosen.escalation?.targetTeam).toBe("engineering");
     }
+  });
+});
+
+/**
+ * failed_payment is Billing-owned at resolution (DECISIONS.md, "failed_payment
+ * is Billing-owned at resolution"). Until this rule, no test ran resolveOutcome
+ * with a Technical AND a Billing finding together, so nothing pinned which one
+ * wins. A live run exposed it: the classifier added a `technical` domain to a
+ * failed-payment ticket, Technical read the Billing FAQ and flagged
+ * `auto_resolvable`, and that flag (rule 7) beat Billing's payment-failed flag
+ * (rule 9), yielding auto_resolve instead of reply_and_monitor.
+ */
+describe("resolveOutcome: failed_payment is Billing-owned when Billing flags a failed payment", () => {
+  const failedPayment = () => makeClassification({ intent: "failed_payment" });
+  const BILLING_SUMMARY = "Payment failed (insufficient funds); customer says the card was updated.";
+  const paymentFailed = () =>
+    billingFinding({ summary: BILLING_SUMMARY, confidence: 0.95, flags: ["payment_failed_awaiting_customer_action"] });
+
+  function expectBillingOwned(result: ReturnType<typeof resolveOutcome>) {
+    expect(result.resolution.action).toBe("reply_and_monitor");
+    expect(result.resolution.requiresHumanReview).toBe(false);
+    expect(result.resolution.summary).toBe(BILLING_SUMMARY);
+    expect(result.resolution.confidence).toBe(0.95);
+    expect(result.escalation).toBeNull();
+    expect(ResolutionDecisionSchema.safeParse(result.resolution).success).toBe(true);
+  }
+
+  describe("Billing outcome wins over Technical's non-escalating flags", () => {
+    it("Technical auto_resolvable + Billing payment_failed -> reply_and_monitor (the live failure)", () => {
+      expectBillingOwned(
+        resolveOutcome(failedPayment(), false, [paymentFailed(), technicalFinding({ flags: ["auto_resolvable"] })]),
+      );
+    });
+
+    it("does not depend on the order the findings arrive in", () => {
+      expectBillingOwned(
+        resolveOutcome(failedPayment(), false, [technicalFinding({ flags: ["auto_resolvable"] }), paymentFailed()]),
+      );
+    });
+
+    it("Technical known_issue_workaround_available is also outranked (Billing owns the outcome)", () => {
+      expectBillingOwned(
+        resolveOutcome(failedPayment(), false, [
+          paymentFailed(),
+          technicalFinding({ flags: ["known_issue_workaround_available"] }),
+        ]),
+      );
+    });
+
+    it("is the same outcome as when Technical did not run at all (rule 9)", () => {
+      const billingOnly = resolveOutcome(failedPayment(), false, [paymentFailed()]);
+      const withTechnical = resolveOutcome(failedPayment(), false, [
+        paymentFailed(),
+        technicalFinding({ flags: ["auto_resolvable"] }),
+      ]);
+      expect(withTechnical).toEqual(billingOnly);
+    });
+  });
+
+  describe("Technical escalation is preserved", () => {
+    it("Technical requires_escalation + Billing payment_failed -> still escalates to engineering", () => {
+      const technical = technicalFinding({ summary: "Doc-described defect; escalate.", flags: ["requires_escalation"] });
+      const { resolution, escalation } = resolveOutcome(failedPayment(), false, [paymentFailed(), technical]);
+      expect(resolution.action).toBe("escalate");
+      expect(resolution.requiresHumanReview).toBe(true);
+      expect(resolution.summary).toBe("Doc-described defect; escalate.");
+      expect(escalation?.targetTeam).toBe("engineering");
+      expect(EscalationDecisionSchema.safeParse(escalation).success).toBe(true);
+    });
+
+    it("escalates for the documented already-tried-and-failed pair as well, in either order", () => {
+      const technical = technicalFinding({ flags: ["known_issue_workaround_already_tried", "requires_escalation"] });
+      for (const findings of [[paymentFailed(), technical], [technical, paymentFailed()]]) {
+        const { resolution, escalation } = resolveOutcome(failedPayment(), false, findings);
+        expect(resolution.action).toBe("escalate");
+        expect(escalation?.targetTeam).toBe("engineering");
+      }
+    });
+
+    it("escalation still wins when Technical also carries auto_resolvable", () => {
+      const technical = technicalFinding({ flags: ["auto_resolvable", "requires_escalation"] });
+      expect(resolveOutcome(failedPayment(), false, [paymentFailed(), technical]).resolution.action).toBe("escalate");
+    });
+  });
+
+  describe("everything above the new rule keeps its precedence", () => {
+    const technicalAuto = () => technicalFinding({ flags: ["auto_resolvable"] });
+
+    it("a failed classification still routes to senior_support", () => {
+      const { resolution, escalation } = resolveOutcome(failedPayment(), true, [paymentFailed(), technicalAuto()]);
+      expect(resolution.action).toBe("escalate");
+      expect(escalation?.targetTeam).toBe("senior_support");
+    });
+
+    it("a Risk-recommended escalation still wins", () => {
+      const { resolution, escalation } = resolveOutcome(failedPayment(), false, [
+        riskFinding(true, { targetTeam: "trust_and_safety", severity: "high" }),
+        paymentFailed(),
+        technicalAuto(),
+      ]);
+      expect(resolution.action).toBe("escalate");
+      expect(escalation?.targetTeam).toBe("trust_and_safety");
+    });
+
+    it("a Policy decision still decides (approve, deny and requires_review)", () => {
+      const cases = [
+        ["approve", "refund_customer"],
+        ["deny", "deny_request"],
+        ["requires_review", "escalate"],
+      ] as const;
+      for (const [decision, action] of cases) {
+        const { resolution } = resolveOutcome(failedPayment(), false, [policyFinding(decision), paymentFailed(), technicalAuto()]);
+        expect(resolution.action).toBe(action);
+      }
+    });
+  });
+
+  describe("the rule is specific to the failed_payment intent and to Billing's flag", () => {
+    it("without Billing's payment-failed flag, Technical's auto_resolvable still decides (no new precedence)", () => {
+      const technical = technicalFinding({ flags: ["auto_resolvable"] });
+      expect(resolveOutcome(failedPayment(), false, [technical]).resolution.action).toBe("auto_resolve");
+      expect(
+        resolveOutcome(failedPayment(), false, [billingFinding({ flags: ["no_billing_issue_found"] }), technical]).resolution.action,
+      ).toBe("auto_resolve");
+      expect(resolveOutcome(failedPayment(), false, [billingFinding({ flags: [] }), technical]).resolution.action).toBe("auto_resolve");
+    });
+
+    // account_security is excluded: rule 1b escalates it before any of this is reached.
+    const otherIntents = TICKET_INTENTS.filter((i) => i !== "failed_payment" && i !== "account_security");
+
+    it.each(otherIntents)("%s: Technical's auto_resolvable still beats Billing's flag, exactly as before", (intent) => {
+      const { resolution, escalation } = resolveOutcome(makeClassification({ intent }), false, [
+        paymentFailed(),
+        technicalFinding({ flags: ["auto_resolvable"] }),
+      ]);
+      expect(resolution.action).toBe("auto_resolve");
+      expect(escalation).toBeNull();
+    });
+
+    it.each(otherIntents)("%s: Technical's known-issue workaround still beats Billing's flag, exactly as before", (intent) => {
+      const { resolution } = resolveOutcome(makeClassification({ intent }), false, [
+        paymentFailed(),
+        technicalFinding({ flags: ["known_issue_workaround_available"] }),
+      ]);
+      expect(resolution.action).toBe("reply_and_close");
+    });
+
+    it.each(otherIntents)("%s: Billing's flag alone still yields reply_and_monitor (rule 9 unchanged)", (intent) => {
+      const { resolution } = resolveOutcome(makeClassification({ intent }), false, [paymentFailed()]);
+      expect(resolution.action).toBe("reply_and_monitor");
+    });
   });
 });

@@ -2024,3 +2024,124 @@ only against scratch copies. Both `dev.db` and `eval.db` still hold the earlier
 **When we'd reconsider:** When a feature needs the current time rather than the
 request time (SLA age, follow-up staleness), or if a policy is clarified to
 count from a different endpoint.
+
+---
+
+## 2026-09-20 — `failed_payment` is Billing-owned at resolution (resolution precedence only)
+
+**Context:** The full live evaluation scored `failed-payment` 0.57 (fail), the
+scenario's first live failure. The first full baseline had scored it 1.00 with
+classifier domains `["billing"]`, only Billing and Response running, and
+`reply_and_monitor`. On the later run the classifier returned
+`["billing","technical"]`, so `selectAgents()` (which starts from the classifier's
+domains) also ran Technical. Technical retrieved the Invoices & Billing FAQ ("a
+failed charge is retried on days 1, 3, and 7 ... before the subscription is
+marked past due") and flagged `auto_resolvable`. Billing correctly flagged
+`payment_failed_awaiting_customer_action`. `resolveOutcome()` checks Technical's
+`auto_resolvable` (rule 7) before Billing's flag (rule 9), so the outcome was
+`auto_resolve`, telling the customer no further action was needed while the
+invoice was unpaid and the account past due. A read-only audit established that
+the code did what its docstring and tests said, and that the repository never
+decided the case: `EVALUATION.md` and an earlier entry here record the placement of
+`failed_payment` below technical as "limited, single-source evidence" (only the
+rule order supports it), say the scoring notes and product spec "do not establish
+any Billing-versus-Technical precedence", that no scenario exercises it, and that
+it "could be revisited". No test ran `resolveOutcome()` with a Technical and a
+Billing finding together.
+
+**Options considered:** (1) make Billing own the resolution for a single-issue
+`failed_payment`; (2) give Technical an explicit abstention path; (3) keep the
+current ordering and document it. A fourth idea, removing Technical from routing
+for this intent, was set aside: it contradicts "domains = implicated specialists"
+and nothing documents the orchestrator dropping classifier domains.
+
+**Decision made:** (1), by an intent-conditioned rule 6b in `resolveOutcome()`
+(named like the existing 1b). When `classification.intent === "failed_payment"`
+and the Billing finding carries `payment_failed_awaiting_customer_action`,
+resolution is `reply_and_monitor` using Billing's summary and confidence, with no
+human review and no escalation, exactly the outcome rule 9 already produces. It
+sits after rule 6, so Technical `requires_escalation` still escalates to
+Engineering, and above rules 7 and 8, so neither Technical `auto_resolvable` nor a
+Technical known-issue workaround overrides Billing under this intent. Everything
+above rule 6 (a failed classification, account security, Risk, every Policy
+outcome) keeps its precedence. Every other intent keeps rules 7-9 as they were.
+
+**Why Billing owns this outcome:**
+- `failed_payment` is defined in `EVALUATION.md` as a charge that failed or was
+  declined "and its retry or payment method", and the product spec lists failed
+  payments under the Billing Agent's role.
+- Billing's flag explicitly covers automatic retry: "a payment recently failed and
+  the customer needs to act (update payment method) or the system will auto-retry".
+  The scenario's situation, a customer who already updated the card while a retry
+  is pending, is what that flag describes.
+- Technical lacks the account and invoice state. It is given only the ticket and
+  product documentation, never invoices, transactions or subscription status, so it
+  could not see that the account was already past due. Billing sees that state but
+  is never shown the documentation, so neither agent held both facts.
+- Technical's `auto_resolvable` result is documentation-only. Its prompt defines the
+  flag as a standard self-service flow "with no account-specific issue", and tells it
+  to "say the standard flow applies" when nothing matches, so on a ticket outside its
+  scope that output is what the prompt prescribes. It cannot establish that a payment
+  problem is resolved.
+- An intent-conditioned resolution rule has precedent (rule 1b), so this follows an
+  existing pattern and adds no abstraction.
+
+**What this does not do (scope):** It changes resolution precedence only. The
+classifier, `selectAgents()`, both agents' prompts, the flag vocabulary and the
+scorer are unchanged, and Technical still runs when the classifier asks for it (a
+test asserts this). No Technical abstention path was added. The seeded scenario,
+its expectation and every policy are untouched. Tier 4 remains as documented for
+every other intent and for genuinely mixed tickets, where the intent is not
+`failed_payment`. The `EVALUATION.md` sentence saying only the rule order places
+Billing after Technical is therefore still true for those cases and was not edited.
+
+**Behavior before and after (this change only):**
+
+| Intent | Findings | Before | After |
+|---|---|---|---|
+| failed_payment | Billing payment-failed + Technical `auto_resolvable` | `auto_resolve` | `reply_and_monitor` |
+| failed_payment | Billing payment-failed + Technical known-issue workaround | `reply_and_close` | `reply_and_monitor` |
+| failed_payment | Billing payment-failed + Technical `requires_escalation` | `escalate` (Engineering) | unchanged |
+| failed_payment | Billing payment-failed alone | `reply_and_monitor` | unchanged |
+| failed_payment | Technical `auto_resolvable`, no Billing flag | `auto_resolve` | unchanged |
+| any other intent | Billing payment-failed + Technical non-escalating flag | Technical decides | unchanged |
+
+**Interpretation to note:** the decision states Billing owns the outcome without
+qualification, and its explicit example was `auto_resolvable`. Rule 6b also outranks
+Technical's non-escalating known-issue flag (rule 8), because leaving rule 8 above it
+would let a Technical finding still override the owning specialist. This is pinned by
+a test. If a documented workaround for a real payment-page problem should instead
+reply and close, that is a separate, narrower decision.
+
+**Tests:** New `resolveOutcome` cases exercise a Technical and a Billing finding
+together for the first time: Billing wins over `auto_resolvable` and the known-issue
+flag in either finding order and equals the Technical-not-run outcome; Technical
+`requires_escalation` (alone, paired with already-tried, and alongside
+`auto_resolvable`) still escalates to Engineering; classification failure, Risk and
+every Policy outcome still take precedence; the rule does not apply without Billing's
+flag; and, for every other intent, rules 7-9 behave exactly as before. Three
+orchestrator-level cases drive the whole pipeline with a classifier returning
+`["billing","technical"]` so both agents genuinely run: the live failure now yields
+`reply_and_monitor`, Technical escalation still escalates, and a billing-only
+classification gives the same outcome. The ownership cases were confirmed to fail
+against the previous `resolve.ts`.
+
+**Not done / limits:** No live evaluation was run and the databases were not
+reseeded. This fixes the resolution, not the routing: when the classifier adds
+`technical`, the extra agent still runs and the exact-set routing dimension still
+scores it as a miss. From the scorer's weights (classification 1, routing 1,
+escalation 2, resolution 2, evidence 1, policy not scored here) the scenario would
+reach 6/7 = 0.857, still a pass. That figure is arithmetic, not a measurement.
+Whether the classifier returns the extra domain again is unchanged and unmeasured.
+The customer reply is still drafted from whichever finding governs, so a Technical
+misreading of the FAQ no longer reaches the customer for this intent, but the
+underlying gap (Technical reading a billing document without account state) is left
+as is. The scenario's own premise ("next retry is automatic") and the FAQ ("before the
+subscription is marked past due") sit in mild tension, because the seed already marks
+this account past due; that is not resolved here.
+
+**When we'd reconsider:** If a documented workaround for a genuine payment-page
+defect should govern a `failed_payment` ticket, if a real mixed ticket (a failed
+payment plus a separate technical problem) is classified `failed_payment` and its
+technical part is dropped, or if Technical is given an abstention path or account
+state, which would change why the precedence is needed.
