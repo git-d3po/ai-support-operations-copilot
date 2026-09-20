@@ -2382,3 +2382,76 @@ static not-found page reflects the mode at build time.
 and revisit the provider registry for per-request providers; if demo replays should reflect
 real model output, replace the scripted recordings with captured live outputs (data only,
 labeled "recorded"); if a second real provider is added, list it in `REAL_PROVIDER_KEYS`.
+
+## 2026-09-20 — Public deployment: explicit Demo Mode and a guarded initialization
+
+**Context:** A read-only deployment audit of the Demo Mode commit found the app safe but not
+deployable. A clean clone could not build: the Prisma client (`src/generated/prisma`) is
+gitignored and nothing generated it. Nothing created a database either: `dev.db` and
+`eval.db` are gitignored, `db:migrate` is `prisma migrate dev` (interactive, development
+only) and `db:eval:setup` is hardcoded to `eval.db`. And an unset `AI_MODE` means live, so
+a public host that forgot the variable would answer live (with a key configured, every
+anonymous click would spend it, roughly $0.02-0.04 each; without one, one failed run row
+per click).
+
+**Decision made:** Change the deployment path only; no application behavior.
+- **Prisma client:** `"postinstall": "prisma generate"`. It runs after every `npm install`
+  and `npm ci`, so typecheck, tests, seed and build all find the client, and it needs no
+  database URL. It needs devDependencies (`prisma`, `dotenv`), so the Replit build uses
+  `npm ci --include=dev`. Verified in a scratch copy of the working tree holding only
+  non-ignored files (the tracked files plus the new untracked ones; no `node_modules`,
+  generated client, `.env` or database): `npm ci --include=dev` generated the client
+  and `next build` passed with no database present.
+- **Initialization:** `npm run db:init:demo` (`scripts/initDemoDatabase.ts`) runs the
+  committed migrations with `prisma migrate deploy` (three migrations and a lock file
+  already existed, so no migration system was invented) and then the existing seed
+  (`prisma/seed.ts`), which is deterministic and rebuilds the 11 curated tickets,
+  policies, fixtures and evaluation cases. It is non-interactive and idempotent. It is a
+  new command; `db:seed`, `db:migrate` and the evaluation workflow are unchanged.
+- **Guards, because the seed deletes its target:** `DATABASE_URL` must be set explicitly
+  (no default, so it cannot fall back to `dev.db`) and be a SQLite file; a file whose name
+  starts with `eval` (the repository's `eval.db` and `eval-<run>.db` files) or that
+  `EVAL_DATABASE_URL` names is refused; and ANY existing database that already holds a real
+  (non-simulated) run or evaluation result is refused, whatever its name, before migrating
+  or seeding. The rules are pure functions in `src/lib/deploy/demoDeployment.ts`.
+- **Explicit Demo Mode:** `npm run start:demo` (`scripts/startDemo.ts`) is the public entry
+  point. It applies the same guards, forces `AI_MODE=demo`, blanks `ANTHROPIC_API_KEY` in
+  the server's environment, initializes the database, then runs `next start` (which honors
+  `PORT` and binds `0.0.0.0`). The key is blanked, not deleted, because `next start` loads
+  `.env` and fills in any variable that is undefined (checked by calling the `@next/env`
+  loader directly against a temporary `.env` holding a fake value: a deleted key was
+  re-read from it, an empty one was not; a full `next start` against a `.env` file was
+  not run). The application default is unchanged (unset still
+  means live) and Demo Mode is not hardcoded into the app; only the public start command
+  states it.
+- **Initialize on every start:** the deployment filesystem may not persist between restarts,
+  so each start begins from the same deterministic dataset; demo runs reset on restart.
+  The demo database is `demo.db` (gitignored).
+- **`.replit`:** build `npm ci --include=dev && AI_MODE=demo npm run build`; run
+  `DATABASE_URL=file:./demo.db npm run start:demo`; Reserved VM (`gce`, one instance);
+  port 3000 to 80. The build also sets `AI_MODE=demo` because the root layout reads the
+  mode at render time, so the statically prerendered pages (the 404 page) carry the Demo
+  Mode banner only if the mode is set at build time. No `replit.nix`: nothing needs it
+  unless `better-sqlite3` lacks a prebuilt binary for the platform (unverified).
+- **Node:** `engines` is `^20.19.0 || ^22.12.0 || >=24.0.0`, Prisma 7's own range
+  (`better-sqlite3` supports 20 to 26, Next.js 16 needs 20.9 or later).
+
+**Why not the alternatives:** *A `prebuild` hook in addition to `postinstall`* adds nothing
+once install always generates. *Seeding at build time* depends on the build's filesystem
+reaching the runtime container, which cannot be verified here. *A bare `AI_MODE=demo` in
+the Replit environment* is exactly the forgettable configuration the audit flagged.
+*Reusing `db:seed` directly* would run against whatever `DATABASE_URL` (or the `dev.db`
+default) names, with no evidence check.
+
+**Not verified / limits:** `.replit` was written without access to Replit and has not run
+there (the module name, the `gce` target and the port keys follow Replit's documented
+format from general knowledge). The single-instance guarantee for one demo run per ticket
+still rests on the process-local guard (see the Public Demo Mode entry); the Reserved VM
+target is what makes it hold. The guard against real evidence is a check-then-act, not a
+lock: it protects against mistakes, not concurrent writers.
+
+**When we'd reconsider:** if the demo needs more than one instance, add a database
+constraint for one demo run per ticket; if the deployment filesystem persists, initialize
+at build instead of every start; if live evaluation results are shipped with the demo,
+they need their own import step (the seed clears results, and this guard would refuse a
+database that contains them).

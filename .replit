@@ -1,0 +1,30 @@
+# Replit configuration for the PUBLIC DEMO deployment (deterministic Demo Mode,
+# no Anthropic key, no model calls). See README.md, "Replit deployment".
+#
+# This file was written without access to Replit and has not been run on it; the
+# module name and the deployment/port keys follow Replit's documented format and
+# are the first things to check if a deployment misbehaves.
+
+modules = ["nodejs-22"]
+
+[deployment]
+# Reserved VM = exactly one instance. The demo's one-run-per-ticket guarantee is
+# per process (src/lib/orchestrator/requestAnalysis.ts), so do not use a
+# multi-instance target.
+deploymentTarget = "gce"
+
+# devDependencies are required (prisma, tsx, dotenv, faker); --include=dev keeps
+# them even if NODE_ENV=production is set. The install's postinstall step runs
+# `prisma generate`. AI_MODE=demo at build time so the statically rendered pages
+# (the 404 page) carry the Demo Mode banner too.
+build = ["sh", "-c", "npm ci --include=dev && AI_MODE=demo npm run build"]
+
+# start:demo forces AI_MODE=demo, blanks any ANTHROPIC_API_KEY in the server's
+# environment, initializes the database named by DATABASE_URL (migrations + seed,
+# refusing evaluation databases), then runs `next start` on $PORT (default 3000).
+# Do not set ANTHROPIC_API_KEY for this deployment.
+run = ["sh", "-c", "DATABASE_URL=file:./demo.db npm run start:demo"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80

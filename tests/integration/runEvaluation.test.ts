@@ -13,6 +13,16 @@ afterEach(async () => {
 });
 
 /**
+ * Asserts only that no key is configured, as a boolean. The key's value must never
+ * reach a failure message: `expect(process.env.ANTHROPIC_API_KEY).toBeFalsy()` prints
+ * the received value when it fails, which is how a real key once appeared in test
+ * output. Run this suite with the key blanked (`ANTHROPIC_API_KEY= npm run test:integration`).
+ */
+function expectNoApiKeyConfigured() {
+  expect(Boolean(process.env.ANTHROPIC_API_KEY), "ANTHROPIC_API_KEY must be unset or empty for this test (its value is deliberately not shown)").toBe(false);
+}
+
+/**
  * Runs against the real seeded database and the real orchestrator — with
  * no ANTHROPIC_API_KEY configured in this environment (see
  * CLAUDE.md/DECISIONS.md: no real credential is ever used in automated
@@ -22,7 +32,7 @@ afterEach(async () => {
  */
 describe("runEvaluationSuite (real orchestrator, no live provider configured)", () => {
   it("records every curated case as failed-to-run rather than inventing a score", async () => {
-    expect(process.env.ANTHROPIC_API_KEY).toBeFalsy();
+    expectNoApiKeyConfigured();
 
     const summaries = await runEvaluationSuite();
 
@@ -40,7 +50,7 @@ describe("runEvaluationSuite (real orchestrator, no live provider configured)", 
   });
 
   it("with a scenarioKey, runs exactly that one scenario through the same analyzeTicket() path", async () => {
-    expect(process.env.ANTHROPIC_API_KEY).toBeFalsy();
+    expectNoApiKeyConfigured();
 
     const summaries = await runEvaluationSuite({ scenarioKey: "duplicate-billing" });
 
