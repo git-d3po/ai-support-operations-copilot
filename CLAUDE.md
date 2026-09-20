@@ -94,11 +94,12 @@ applies with no "currently stubbed" asterisk.
 - **E2E tests (Playwright, `tests/e2e/`)**: the deterministic regression
   layer. Run against a production build (`npm run build && npm run start`)
   and the seeded database, so assertions can reference specific seeded
-  tickets/customers by name. The "Run AI analysis" journey uses a fixture
-  model provider (`USE_MOCK_MODEL_PROVIDER=true`, wired in
-  `src/lib/ai/providers/registry.ts` — see DECISIONS.md) so it never makes
-  a live call either. This is the project's actual regression safety net —
-  treat failing e2e tests as blocking, not advisory.
+  tickets/customers by name. The app runs in Demo Mode (`AI_MODE=demo`,
+  set in `playwright.config.ts`; the deterministic `DemoProvider` in
+  `src/lib/ai/providers/`, see DECISIONS.md, "Public Demo Mode") so the
+  "Run demo analysis" journey never makes a live call either. This is the
+  project's actual regression safety net — treat failing e2e tests as
+  blocking, not advisory.
 - **Never use a real model credential in any automated test, at any test
   level.** If a task seems to need one (e.g. actually running the
   evaluation suite for real), stop and ask first — see `npm run eval`'s

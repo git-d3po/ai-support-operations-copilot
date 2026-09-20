@@ -1,13 +1,16 @@
+import { getAiMode } from "../mode";
 import { AnthropicProvider } from "./anthropic";
-import { createE2EMockProvider } from "./e2eMockProvider";
+import { DemoProvider } from "./demoProvider";
+import { isSimulatedProvider } from "./provenance";
 import type { ModelProvider } from "./types";
 
 /**
  * Known provider keys. Adding a real provider (OpenAI, a local/open-weight
  * model server, etc.) is: add its key here, add one `case` in
- * `createProvider` below, done — no other file needs to change. This is
- * the whole point of the abstraction (see DECISIONS.md, "Model provider
- * abstraction").
+ * `createProvider` below, and list its `ModelProvider.key` in
+ * `REAL_PROVIDER_KEYS` (provenance.ts) so its runs count as real rather than
+ * simulated — no other file needs to change. This is the whole point of the
+ * abstraction (see DECISIONS.md, "Model provider abstraction").
  */
 export const PROVIDER_KEYS = ["anthropic", "mock"] as const;
 export type ProviderKey = (typeof PROVIDER_KEYS)[number];
@@ -23,7 +26,14 @@ export function registerProvider(key: ProviderKey, provider: ModelProvider): voi
 
 export function getProvider(key: ProviderKey): ModelProvider {
   const existing = instances.get(key);
-  if (existing) return existing;
+  // In Demo Mode a REAL provider instance must never be handed out, even if one
+  // was cached earlier in this process (e.g. created before the mode was read).
+  // "Real" is the shared provenance rule (provenance.ts), not a hardcoded key, so
+  // a real provider added later is covered too. A simulated provider that was
+  // registered explicitly (test injection) is kept. The mode is only read when a
+  // real instance is cached, so live behavior and injected providers are unaffected.
+  const staleRealProvider = existing !== undefined && !isSimulatedProvider(existing.key) && getAiMode() === "demo";
+  if (existing && !staleRealProvider) return existing;
 
   const created = createProvider(key);
   instances.set(key, created);
@@ -33,22 +43,16 @@ export function getProvider(key: ProviderKey): ModelProvider {
 function createProvider(key: ProviderKey): ModelProvider {
   switch (key) {
     case "anthropic":
-      // Test-fixture override for the Playwright e2e suite ONLY — see
-      // DECISIONS.md ("E2E coverage for the AI analysis flow uses a
-      // fixture model provider"). Only playwright.config.ts's webServer
-      // sets this env var; `npm run dev` / a real `npm run start` never
-      // do, so this branch is inert in every real usage of the app.
-      //
-      // This check lives here (inside createProvider) rather than in an
-      // external Next.js instrumentation hook because Next's per-route
-      // bundling gives the instrumentation hook and a Server Action
-      // separate module instances of this file — a module-level
-      // `registerProvider()` call made from instrumentation.ts does not
-      // reliably reach the instance a Server Action resolves providers
-      // from. Reading `process.env` here works regardless of bundling,
-      // since env vars are process-wide, not bundle-scoped.
-      if (process.env.USE_MOCK_MODEL_PROVIDER === "true") {
-        return createE2EMockProvider();
+      // Public Demo Mode (AI_MODE=demo): the Anthropic slot is served by the
+      // deterministic DemoProvider, so no model is called and no API key is
+      // needed, even if one happens to be set in the environment. AnthropicProvider
+      // is not constructed at all in this mode. Routing (modelRouting.ts) is
+      // untouched: every step still targets "anthropic", and the run records the
+      // provider that ACTUALLY answered ("demo"), which provenance.ts treats as
+      // simulated. Unset AI_MODE means live, so existing behavior is unchanged.
+      // See DECISIONS.md ("Public Demo Mode").
+      if (getAiMode() === "demo") {
+        return new DemoProvider();
       }
       return new AnthropicProvider();
     case "mock":

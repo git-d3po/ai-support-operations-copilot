@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ModeBanner } from "@/components/mode-banner";
 import { Nav } from "@/components/nav";
 import "./globals.css";
 
@@ -26,7 +27,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex h-full min-h-screen bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
         <Nav />
-        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto">
+          <ModeBanner />
+          {children}
+        </main>
       </body>
     </html>
   );

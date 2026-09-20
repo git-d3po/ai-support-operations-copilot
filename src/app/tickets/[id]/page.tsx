@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { getAiMode } from "@/lib/ai/mode";
+import { DEMO_PROVIDER_KEY, isSimulatedProvider } from "@/lib/ai/providers/provenance";
+import { DEMO_CURATED_ONLY_MESSAGE, hasDemoRecording } from "@/lib/demo/recordings";
 import { formatCents, formatDateTime } from "@/lib/format";
 import { RunAnalysisButton } from "./RunAnalysisButton";
 import {
@@ -55,6 +58,13 @@ export default async function TicketDetailPage({
   const account = ticket.customer.account;
   const latestRun = ticket.orchestrationRuns[0] ?? null;
 
+  // Demo Mode is resolved on the server. A ticket without a scripted recording
+  // (anything outside the curated scenarios) cannot be analyzed in Demo Mode,
+  // and the action refuses it too; this only makes that visible up front.
+  const demoMode = getAiMode() === "demo";
+  const demoDisabledReason = demoMode && !hasDemoRecording(ticket.scenarioKey) ? DEMO_CURATED_ONLY_MESSAGE : null;
+  const isDemoRun = latestRun?.agentInvocations.some((inv) => inv.provider === DEMO_PROVIDER_KEY) ?? false;
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-6 p-6">
       <div>
@@ -88,7 +98,12 @@ export default async function TicketDetailPage({
         <section className="mt-6">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">AI orchestration</h2>
-            <RunAnalysisButton ticketId={ticket.id} hasRunBefore={ticket.orchestrationRuns.length > 0} />
+            <RunAnalysisButton
+              ticketId={ticket.id}
+              hasRunBefore={ticket.orchestrationRuns.length > 0}
+              demoMode={demoMode}
+              disabledReason={demoDisabledReason}
+            />
           </div>
 
           {!latestRun && (
@@ -108,8 +123,9 @@ export default async function TicketDetailPage({
             <div className="mt-3 flex flex-col gap-4">
               {latestRun.isSimulated && (
                 <div className="rounded border border-purple-200 bg-purple-50 p-2 text-xs font-medium text-purple-800 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300">
-                  SIMULATED RUN — one or more steps were served by a deterministic fixture
-                  provider, not a real model. Not a measure of real AI performance.
+                  {isDemoRun
+                    ? "SIMULATED RUN — demo replay of scripted responses; no model was called. Not a measure of real AI performance."
+                    : "SIMULATED RUN — one or more steps were served by a deterministic fixture provider, not a real model. Not a measure of real AI performance."}
                 </div>
               )}
               <div>
@@ -137,7 +153,10 @@ export default async function TicketDetailPage({
                 escalation={latestRun.escalation as unknown as EscalationDecision | null}
               />
 
-              <ProposedResponseCard response={latestRun.response as unknown as CustomerResponse | null} />
+              <ProposedResponseCard
+                response={latestRun.response as unknown as CustomerResponse | null}
+                simulated={latestRun.isSimulated}
+              />
             </div>
           )}
         </section>
@@ -214,7 +233,7 @@ function AgentInvocationCard({
   const isClassifier = agentKey === "classifier";
   const classification = isClassifier ? (finding as TicketClassification | null) : null;
   const agentFinding = !isClassifier ? (finding as AnyAgentFinding | null) : null;
-  const isSimulated = provider !== "anthropic";
+  const isSimulated = isSimulatedProvider(provider);
 
   return (
     <div className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-800">
@@ -315,11 +334,16 @@ function ResolutionCard({
   );
 }
 
-function ProposedResponseCard({ response }: { response: CustomerResponse | null }) {
+function ProposedResponseCard({ response, simulated }: { response: CustomerResponse | null; simulated: boolean }) {
   if (!response) return null;
   return (
     <div className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-800">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Proposed response</h3>
+      {simulated && (
+        <p className="mt-1 text-xs font-medium text-purple-800 dark:text-purple-300">
+          Scripted draft only — no refund, email, payment, account change, or other external action was actually executed.
+        </p>
+      )}
       {response.subject && <p className="mt-1 font-medium">{response.subject}</p>}
       <p className="mt-1 whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">{response.body}</p>
       <p className="mt-1 text-xs text-zinc-500">tone: {response.tone}</p>

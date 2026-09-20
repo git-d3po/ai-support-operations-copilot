@@ -11,6 +11,7 @@
 import "dotenv/config";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { assertLiveModeForEvaluation } from "../src/lib/ai/mode";
 
 /**
  * Live evaluation results go to their OWN database (`eval.db` by default),
@@ -22,6 +23,18 @@ import path from "node:path";
 const EVAL_DATABASE_URL = process.env.EVAL_DATABASE_URL ?? "file:./eval.db";
 
 async function main() {
+  // First check, before the database or the key: Demo Mode's recordings are
+  // scripted, so an evaluation run under AI_MODE=demo must never happen (its
+  // results would look like a measurement and are not). An invalid AI_MODE is
+  // refused too. See DECISIONS.md ("Public Demo Mode").
+  try {
+    assertLiveModeForEvaluation();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+    return;
+  }
+
   // Must happen before anything imports src/lib/db.ts (which reads
   // DATABASE_URL at import time) — hence the dynamic import below.
   process.env.DATABASE_URL = EVAL_DATABASE_URL;

@@ -4,8 +4,8 @@ import { formatCents, formatDate } from "./evidence";
 /**
  * Every pipeline step's system prompt starts with a stable `TASK: <name>`
  * line. This isn't decoration — it's what lets the same request shape be
- * unambiguously identified downstream: the e2e test fixture provider
- * (src/lib/ai/providers/e2eMockProvider.ts) and unit test mocks dispatch
+ * unambiguously identified downstream: the Demo Mode provider
+ * (src/lib/ai/providers/demoProvider.ts) and unit test mocks dispatch
  * canned responses by reading this line, and it makes real prompts
  * self-documenting when inspected in logs.
  */

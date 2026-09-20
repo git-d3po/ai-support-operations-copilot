@@ -39,9 +39,11 @@ export default defineConfig({
     url: "http://localhost:3100",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    // See instrumentation.ts / e2eMockProvider.ts / DECISIONS.md: swaps the
-    // "anthropic" provider for a deterministic fixture so "Run AI analysis"
-    // can be tested end to end without a live API key or a network call.
-    env: { USE_MOCK_MODEL_PROVIDER: "true" },
+    // Runs the app in public Demo Mode (src/lib/ai/mode.ts, providers/demoProvider.ts,
+    // DECISIONS.md "Public Demo Mode"): the Anthropic slot is served by the deterministic
+    // DemoProvider, so "Run demo analysis" is tested end to end, through the real
+    // orchestrator and persistence, with no API key and no network call. This is the same
+    // path a public deployment runs, so the suite tests what ships.
+    env: { AI_MODE: "demo" },
   },
 });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getAiMode } from "@/lib/ai/mode";
 import { db } from "@/lib/db";
 import type {
   EvaluationExpectedOutcome,
@@ -49,8 +50,9 @@ export default async function EvaluationsPage() {
           <span className="font-medium">Live model evaluation: </span>
           {liveScoredCases.length === 0 ? (
             <span className="text-zinc-500">
-              not run yet — requires a real ANTHROPIC_API_KEY and an explicit request; see
-              EVALUATION.md and DECISIONS.md. No score below is a substitute for this.
+              {getAiMode() === "demo"
+                ? "no historical live results are included in this Demo Mode deployment. Demo analyses are scripted replays and are never evaluation results. See EVALUATION.md."
+                : "not run yet — requires a real ANTHROPIC_API_KEY and an explicit request; see EVALUATION.md and DECISIONS.md. No score below is a substitute for this."}
             </span>
           ) : (
             <span>

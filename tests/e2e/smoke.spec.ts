@@ -13,11 +13,20 @@ test("root redirects to the inbox", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 });
 
-test("inbox lists the seeded tickets, including curated evaluation scenarios", async ({ page }) => {
+test("the Demo Mode banner is visible on every page", async ({ page }) => {
+  for (const route of ["/inbox", "/operations", "/evaluations", "/knowledge", "/settings"]) {
+    await page.goto(route);
+    await expect(page.getByRole("status").filter({ hasText: "Demo Mode — synthetic data, scripted replay, no model is called" })).toBeVisible();
+  }
+});
+
+test("inbox lists the seeded tickets, including all 11 curated evaluation scenarios", async ({ page }) => {
   await page.goto("/inbox");
   await expect(page.getByText(/\d+ tickets\./)).toBeVisible();
   await expect(page.getByText("eval: password-reset")).toBeVisible();
   await expect(page.getByText("eval: multi-domain")).toBeVisible();
+  await expect(page.getByText("eval: out-of-window-refund")).toBeVisible();
+  await expect(page.getByText(/^eval: /)).toHaveCount(11);
 });
 
 test("opening a curated ticket shows the customer, conversation, and account context", async ({ page }) => {
@@ -44,6 +53,12 @@ test("Evaluations page lists all 11 curated scenarios", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Evaluations" })).toBeVisible();
   const rows = page.locator("tbody tr");
   await expect(rows).toHaveCount(11);
+});
+
+test("Evaluations distinguishes Demo Mode from historical live results and never presents demo replays as a score", async ({ page }) => {
+  await page.goto("/evaluations");
+  await expect(page.getByText(/no historical live results are included in this Demo Mode deployment/)).toBeVisible();
+  await expect(page.getByText(/scripted replays and are never evaluation results/)).toBeVisible();
 });
 
 test("Knowledge page lists seeded policies and product docs", async ({ page }) => {

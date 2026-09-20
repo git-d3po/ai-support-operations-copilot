@@ -2248,3 +2248,137 @@ approving this request instead of marking it `requires_review`, investigate the 
 agent's handling of the catch-all as a separate finding. If agents gain subscription state,
 reconsider a condition-4 scenario. If the policy's over-90-day wording is made
 unambiguous, reconsider representing it.
+
+---
+
+## 2026-09-20 — Public Demo Mode: a deterministic `DemoProvider` selected by `AI_MODE=demo`
+
+**Context:** The app's only way to answer "Run AI analysis" was the real provider with
+one server-side API key. A public deployment would either have no key, so every click
+fails, or have one, so any anonymous visitor could spend it (roughly $0.02-0.04 and
+10-20 seconds per click), and every click persists rows into one shared SQLite file.
+The one no-key path, `e2eMockProvider.ts`, was a test fixture and unfit to promote: it
+never looked at the ticket, so it answered EVERY ticket with the duplicate-billing
+analysis (including a reply addressed to that ticket's customer); it had no Technical or
+Risk responses and threw for them; and it was reachable in any deployment by setting
+`USE_MOCK_MODEL_PROVIDER=true`, which replaced the whole production "anthropic" slot.
+A read-only design audit also found two provenance defects that Demo Mode would have
+turned into metric contamination: `persist.ts` treated only the key `"mock"` as
+simulated ("anything else counts as real") while the ticket page treated anything but
+`"anthropic"` as simulated, so a provider named `demo` would have been persisted as
+real; and `persistFailedRun` always wrote `isSimulated = false`, so a demo-mode failure
+would have counted as a real failure in AI Operations.
+
+**Decision made:** Public Demo Mode is a new, production-safe `DemoProvider`
+(`src/lib/ai/providers/demoProvider.ts`, key exactly `demo`), selected by the
+server-only `AI_MODE=demo`. It implements the unchanged `ModelProvider` interface and
+replays scripted responses from `src/lib/demo/recordings.ts`, so the real orchestrator,
+routing, agents, resolution rules, response guard and persistence run unchanged and only
+the model call is replaced.
+- **`AI_MODE` (`src/lib/ai/mode.ts`):** `demo` selects Demo Mode; `live` or unset means
+  live; any other value is an error, so a typo such as `AI_MODE=Demo` fails loudly and
+  can never quietly reach a paid provider. Read on the server per call, never exposed as
+  `NEXT_PUBLIC_*`.
+- **Registry:** in demo mode the "anthropic" slot resolves to `DemoProvider` (the existing
+  slot-override pattern; `modelRouting.ts` is untouched) and `AnthropicProvider` is never
+  constructed, even if an API key is present. A previously cached real instance is not
+  handed out either. The `USE_MOCK_MODEL_PROVIDER` branch and `e2eMockProvider.ts` are
+  removed.
+- **Provenance (`src/lib/ai/providers/provenance.ts`):** one shared rule, an allowlist of
+  REAL providers (`anthropic`), so it fails closed: `demo`, `mock` and any provider not
+  yet listed are simulated. `persist.ts` and the ticket page both use it, and
+  `persistFailedRun` now derives its flag from the provider that would have served the run
+  (treating an undeterminable one as simulated).
+- **Persistence:** demo runs are persisted as ordinary runs with `isSimulated = true` and
+  provider `demo` on every invocation. No schema change.
+- **Entry point (`src/lib/orchestrator/requestAnalysis.ts`, called by the Server Action):**
+  the ticket id is validated as a bounded string; in demo mode the ticket must exist and
+  be one of the curated scenarios with a recording, and anything else is rejected before
+  anything is persisted; a ticket gets at most one persisted demo run, whether it completed
+  or failed (a completed run is returned as a replay, a failed run as its stored error, and
+  a failed demo run is not retried); concurrent requests for a ticket share one in-flight
+  run; an unexpected database error is returned as a failure, never as a success or a
+  thrown error. Live behavior is `analyzeTicket()` exactly as before.
+- **Evaluation:** `scripts/runEvaluation.ts` refuses to run under `AI_MODE=demo` (or an
+  invalid value) as its first check.
+- **UI (minimal):** a site-wide "Demo Mode" banner; the button reads "Run demo analysis"
+  and is disabled with an explanation on uncurated tickets; a demo run is labeled a
+  simulated demo replay; the Evaluations copy distinguishes Demo Mode from historical live
+  results. No redesign.
+
+**Why the test-only fixture was not promoted, and why `DemoProvider` is separate:** the
+fixture's defects above are structural (one ticket's answer for all tickets, an env switch
+that swaps the production slot, test-only assumptions), and a production path should not
+inherit a test's reachability. An earlier decision (the dry-run harness entry) had already
+rejected extending it, for the same reason of keeping its purpose single. Retiring it also
+removes the only test-only provider from the production bundle, and the e2e suite now runs
+the same Demo Mode a public deployment runs, so it tests what ships.
+
+**Why the recordings are shared with the dry-run harness:** the harness already held
+correct, deterministic responses for all 11 scenarios. Keeping a second copy for Demo Mode
+would let the two drift, so the correct responses moved to `src/lib/demo/recordings.ts` and
+`scripts/evaluationDryRunFixtures.ts` derives from them, adding back only its one deliberate
+mutation (a wrong `known-technical-issue` answer that proves the scorer detects failures).
+That wrong answer is never in the production recordings; the recordings carry a correct one
+authored for this change. The move was checked to be lossless: all 11 harness fixtures were
+byte-identical before and after. A test scores every recording through the real orchestrator
+and scorer (using the provider `AI_MODE=demo` selects), which fails loudly if routing or a
+scenario drifts.
+
+**Why demo runs are persisted as simulated, and why replay is idempotent:** every page reads
+persisted runs, and persistence is the product's stated principle ("nothing renders that
+wasn't persisted"). Not persisting would need a separate client-side rendering path and lose
+that fidelity; persisting unmarked would contaminate AI Operations. Persisting with
+`isSimulated` uses what the schema and the Operations and Evaluations pages already do (they
+exclude and disclose simulated runs, and demo creates no evaluation results). Because a demo
+run is deterministic, a second one adds nothing, so a ticket gets at most one persisted
+demo run. A failed demo run counts too and is deliberately not retried: an earlier version
+looked only for a completed run, and a broken recording then added a failed row on every
+click (reproduced: four clicks, four rows). This keeps the number of demo runs at or below
+the number of curated tickets for a single server process, however often anonymous visitors
+click, which is also why no rate limiter is needed (no paid call exists to protect). The
+price is that a failed demo run stays failed until the database is reseeded. The guarantee
+is enforced by a database lookup plus a process-local in-flight map, with no database
+constraint, so it is a single-instance guarantee (see below); it is not multi-instance-safe.
+
+**Demo Mode performs no external actions:** the scripted responses say things like "Refund
+processed", and the resolution card shows `refund_customer`, but no refund, email, payment,
+account change or any other external action is executed in any mode. The product only
+proposes. The ticket page therefore says so beside the proposed response of every simulated
+run ("Scripted draft only — no refund, email, payment, account change, or other external
+action was actually executed"); the recordings themselves are unchanged. The Operations note
+about excluded runs now describes them as Demo Mode scripted replays or fixture runs.
+
+**Why `AI_MODE` defaults to live:** every documented local and evaluation workflow
+(`npm run eval`, integration tests, private use with a key) keeps working unchanged, and a
+public deployment opts in explicitly. The alternative, defaulting to demo, would make a
+forgotten variable silently turn a live evaluation into scripted output. The cost of this
+choice is that a public deployment that forgets `AI_MODE=demo` behaves as live; it is
+mitigated by the deployment recipe (set `AI_MODE=demo`, never set `ANTHROPIC_API_KEY` on the
+public host) and by the visible banner, and a live host without a key cannot spend anything.
+
+**Why evaluation refuses Demo Mode:** the recordings are scripted and correct by
+construction. An evaluation under demo mode would produce results that look like a
+measurement and are not. Refusing is safer than tagging, because a run that is never
+recorded cannot be mistaken for evidence.
+
+**Honest framing:** Demo Mode shows the pipeline's structure and its deterministic logic with
+scripted model responses, so it will always look correct. It is not evidence of model
+performance; live evaluation results, failures included, are.
+
+**Not done / limits:** No BYOK, authentication, rate limiter, Postgres, schema migration or
+UI redesign. BYOK would need a per-request provider, which the process-wide registry does
+not support, and is not blocked by this. No live evaluation was run and `eval.db` was not
+touched. Historical live results are not shipped with the demo deployment yet (a separate
+step), so the Evaluations page says none are included. The idempotency lookup and the
+in-flight guard are per process and there is no database constraint, so a multi-instance
+deployment could create more than one demo run per ticket (the check-then-insert can race
+across processes); the public demo is explicitly single-instance. The Settings page still lists the live model
+routing, which Demo Mode does not use, and the demo recordings' stated latency and cost are
+zero because no model is called. The root layout reads `AI_MODE` when it renders, so the
+static not-found page reflects the mode at build time.
+
+**When we'd reconsider:** if BYOK or a live path is exposed to the public, add a rate limit
+and revisit the provider registry for per-request providers; if demo replays should reflect
+real model output, replace the scripted recordings with captured live outputs (data only,
+labeled "recorded"); if a second real provider is added, list it in `REAL_PROVIDER_KEYS`.

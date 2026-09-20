@@ -19,9 +19,9 @@ export default async function OperationsPage() {
     db.orchestrationRun.count({ where: { isSimulated: true } }),
   ]);
 
-  // Simulated (fixture-provider) runs are excluded from operational
-  // metrics entirely — they'd otherwise silently inflate "real" activity
-  // numbers with dry-run/test data. See DECISIONS.md ("Honestly recording
+  // Simulated runs (Demo Mode scripted replays, and dry-run/test fixtures) are
+  // excluded from operational metrics entirely — they'd otherwise silently
+  // inflate "real" activity numbers with scripted data. See DECISIONS.md ("Honestly recording
   // which provider actually served a call").
   const runs = allRuns.filter((r) => !r.isSimulated);
 
@@ -62,8 +62,9 @@ export default async function OperationsPage() {
       </p>
       {simulatedRunCount > 0 && (
         <p className="mt-1 text-xs text-purple-700 dark:text-purple-400">
-          {simulatedRunCount} additional simulated (fixture-provider) run(s) exist and are
-          intentionally excluded from every metric below — see the Evaluations page.
+          {simulatedRunCount} additional simulated run(s) exist (Demo Mode scripted replays or
+          fixture runs) and are intentionally excluded from every metric below — see the
+          Evaluations page.
         </p>
       )}
 

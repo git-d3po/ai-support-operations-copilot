@@ -60,8 +60,11 @@ src/
         types.ts            # ModelProvider interface + request/result types
         anthropic.ts         # the ONLY file allowed to import @anthropic-ai/sdk
         mock.ts               # deterministic, network-free provider used in unit tests
-        e2eMockProvider.ts     # deterministic fixture used ONLY by the e2e suite
-        registry.ts            # ProviderKey, getProvider()/registerProvider()
+        demoProvider.ts        # public Demo Mode: deterministic scripted replay, no model, no key
+        provenance.ts          # the one definition of simulated-vs-real provenance
+        registry.ts            # ProviderKey, getProvider()/registerProvider(), AI_MODE selection
+    demo/
+      recordings.ts          # scripted responses for the 11 curated scenarios (Demo Mode + dry-run)
     orchestrator/
       types.ts             # SpecialistAgent contract, AgentContext, ModelRoutingConfig, PipelineStepKey
       context.ts            # loadTicketContext() — the one DB read that assembles TicketDataContext
@@ -257,19 +260,34 @@ provider (OpenAI, a local/open-weight model server) is: implement
 `ModelProvider`, add one `case` in `registry.ts`'s `createProvider()`,
 done — no change to any agent, to `orchestrator.ts`, or to any schema.
 
-**Note on the e2e fixture:** `registry.ts`'s `createProvider("anthropic")`
-also checks `USE_MOCK_MODEL_PROVIDER` and returns
-`e2eMockProvider.ts`'s fixture instead of a real `AnthropicProvider` when
-it's set. This check lives *inside* `createProvider` rather than in an
-external Next.js instrumentation hook because Next's per-route bundling
-gives an instrumentation hook and a Server Action separate module
-instances of `registry.ts` — a `registerProvider()` call made from outside
-does not reliably reach the instance a Server Action resolves providers
-from at request time. Reading `process.env` inside `createProvider` works
-regardless of bundling, since env vars are process-wide. See
-DECISIONS.md ("E2E coverage for the AI analysis flow uses a fixture model
-provider") for the full story, including why this was discovered the hard
-way.
+**Public Demo Mode (`AI_MODE`):** `registry.ts`'s `createProvider("anthropic")`
+reads the server-only `AI_MODE` variable (`src/lib/ai/mode.ts`). Unset or
+`live` returns the real `AnthropicProvider`, exactly as before. `demo`
+returns `DemoProvider`, a deterministic replay of the scripted responses in
+`src/lib/demo/recordings.ts`, so the real orchestrator, routing, agents,
+resolution rules and response guard all run and only the model call is
+replaced. In that mode `AnthropicProvider` is never constructed (even if an
+API key is set), an unknown value of `AI_MODE` is an error, and
+`npm run eval` refuses to run. Demo runs are persisted like any other but
+with `isSimulated = true` and provider `demo` on every invocation, which is
+what keeps them out of AI Operations' real metrics; that flag comes from one
+shared rule (`provenance.ts`), including for failed runs. The Server Action
+delegates to `requestAnalysis()`, which in Demo Mode runs only curated
+scenarios, rejects anything else before persisting, and persists at most one
+demo run per ticket, whether it completed or failed (a failed demo run is
+returned as its stored error and not retried; an unexpected database error is
+returned as a failure). That guarantee is a database lookup plus a
+process-local in-flight guard, so it holds for a single server process (the
+intended public demo) and is not multi-instance-safe. Demo Mode performs no
+external action: scripted replies may say "Refund processed", and the ticket
+page states that nothing was actually executed. The check lives *inside*
+`createProvider` rather than in an external Next.js instrumentation hook
+because Next's per-route bundling gives an instrumentation hook and a Server
+Action separate module instances of `registry.ts`; reading `process.env`
+inside `createProvider` works regardless of bundling, since env vars are
+process-wide. See DECISIONS.md ("Public Demo Mode") for the reasoning,
+including why the earlier test-only fixture provider was retired instead of
+promoted.
 
 ## Model routing
 
