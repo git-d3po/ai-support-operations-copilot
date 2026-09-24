@@ -60,9 +60,8 @@ DECISIONS.md. This is what's left.
   Done so far (AUDIT.md Audits #6 and #7): shared UI primitives and the
   purple/indigo removal; neutral tokens with AA-passing muted text and a
   dark-mode surface hierarchy; shared presentation labels
-  (`src/lib/labels.ts`); the decision-first ticket page. Next passes, in order:
-  - Navigation: active-route state, a Halcyon workspace line, grouping;
-    icons only if a dependency is justified (AUDIT.md DES-10).
+  (`src/lib/labels.ts`); the decision-first ticket page; grouped navigation
+  with a route-aware active state (AUDIT.md DES-10). Next passes, in order:
   - AI Operations in Demo Mode: an honest empty state (its "run AI analysis"
     hint cannot fill metrics that deliberately exclude demo runs), keeping
     simulated runs out of real metrics (AUDIT.md DES-23).

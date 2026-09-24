@@ -13,6 +13,31 @@ test("root redirects to the inbox", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 });
 
+test("the navigation shows the Halcyon workspace and marks exactly the current destination", async ({ page }) => {
+  const destinations = [
+    { route: "/inbox", link: "Inbox" },
+    { route: "/operations", link: "Operations" },
+    { route: "/evaluations", link: "Evaluations" },
+    { route: "/knowledge", link: "Knowledge" },
+    { route: "/settings", link: "Settings" },
+  ];
+  for (const { route, link } of destinations) {
+    await page.goto(route);
+    const nav = page.getByRole("navigation");
+    await expect(page.getByText("Halcyon", { exact: true })).toBeVisible();
+    await expect(nav.getByRole("link", { name: link, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.locator("[aria-current]")).toHaveCount(1);
+  }
+
+  // A ticket is worked from the Inbox: Inbox is marked as the current section, not the current page.
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "Charged twice this billing cycle" }).click();
+  await expect(page).toHaveURL(/\/tickets\//);
+  const nav = page.getByRole("navigation");
+  await expect(nav.getByRole("link", { name: "Inbox", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect(nav.locator("[aria-current]")).toHaveCount(1);
+});
+
 test("the Demo Mode banner is visible on every page", async ({ page }) => {
   for (const route of ["/inbox", "/operations", "/evaluations", "/knowledge", "/settings"]) {
     await page.goto(route);

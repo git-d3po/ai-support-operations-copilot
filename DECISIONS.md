@@ -2531,3 +2531,50 @@ loading states and motion are separate passes (TODO.md).
 **When we'd reconsider:** if interactive components are needed (menus, dialogs, comboboxes),
 revisit a component library; if a canonical value's wording must change for product reasons,
 change it deliberately across schema, prompts, recordings and evaluation, never via a label.
+
+## 2026-09-23 — Application navigation: grouped destinations, route-aware active state, no icons
+
+**Context:** The sidebar was a flat list of five text links with no active state, no product
+identity ("AI Support Ops Copilot"; Halcyon appeared nowhere) and no grouping (AUDIT.md,
+DES-10). Two facts from the repository shaped the change: ticket detail lives at
+`/tickets/[id]`, a sibling of `/inbox` rather than a child, and the project has no icon library
+(direct or transitive) and no inline SVG.
+
+**Decision made:** A shell-only change; no route, data or behavior change.
+- **Grouped by the operator's work:** Operations (Inbox), AI Operations (Operations,
+  Evaluations), Knowledge (Knowledge), Administration (Settings). The model lives in
+  `src/lib/navigation.ts` as pure data plus `navItemState()`; a unit test checks that every
+  destination is an existing `src/app` route.
+- **Tickets belong to the Inbox area without moving the route:** `/tickets/*` is declared as
+  part of Inbox's section (`sectionPrefixes`). Moving ticket pages under `/inbox/[id]` would
+  change every ticket URL, link and test for a navigation concern. Prefixes match whole path
+  segments only.
+- **Active state:** `aria-current="page"` on the destination itself, `aria-current="true"` on
+  Inbox while a ticket is open (the ticket is inside the Inbox area, not the Inbox page).
+  Visually a fill, a heavier weight and a leading bar, so it never depends on color alone.
+- **Minimal client boundary:** only `NavLink` is a client component, reading Next's
+  `usePathname()`; no state or effects. The shell stays a server component.
+- **Semantics:** the sidebar is a `div`, not `<aside>`, because the ticket page's context panel
+  is already the page's complementary landmark. Group labels are not headings (they would
+  enter every page's heading outline and collide with page titles such as "AI Operations");
+  each list takes its accessible name from its visible label via `aria-labelledby`. The
+  Halcyon identity sits outside `<nav>`, because it is not navigation.
+- **Identity:** "Halcyon" with "Support Ops Copilot" beneath it, as text. No logo, tagline or
+  claims.
+- **No icons:** with five labelled destinations in named groups, icons add little scanning
+  value, and the only way to get them is a new dependency or hand-drawn SVGs. Labels carry the
+  meaning alone.
+- **Surfaces:** the existing `surface` and `border` tokens (see "Design foundation"); the
+  active and hover fills are nav-local zinc steps above `surface`. No new tokens, no shadow.
+  Links gained a visible `focus-visible` ring in the foreground color. Sidebar width (`w-56`)
+  and link padding are unchanged, so page content starts at the same position on every route.
+
+**Verification:** typecheck, lint, 424 unit tests (7 new, navigation model), the
+`AI_MODE=demo` build and 15 E2E tests (1 new: every destination marks exactly one current link,
+and a ticket marks Inbox as its section). In the browser, both schemes: correct active state on
+all six page types, nav text at least 4.63:1 (light) and 6.91:1 (dark), focus ring visible
+under keyboard Tab, main content left edge constant at 224px.
+
+**When we'd reconsider:** add icons if the navigation grows to where scanning labels becomes
+slow, choosing one library with one stroke weight; move tickets under `/inbox` only if the
+Inbox gains its own nested views (filters, queues) that tickets should inherit.
