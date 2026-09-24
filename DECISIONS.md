@@ -2621,3 +2621,60 @@ Demo Mode only, so the live-mode states were checked in the browser without crea
 live mode against the seeded database (no explanation, since Demo Mode is not the reason) and a
 scratch copy of the evaluation database, which holds real-model runs (normal dashboard in both
 modes). The original evaluation databases were checksummed before and after and are unchanged.
+
+## 2026-09-23 — Application not-found and error states
+
+**Context:** A missing page, an unknown ticket id and a failed render all showed Next.js's
+built-in pages, which look like a different product and say nothing useful to an operator
+(AUDIT.md, DES-24). The architecture decides where each state can live: one root layout, no route
+groups, no dynamic top-level segment; the ticket page already calls `notFound()` for an unknown
+id; and the root layout itself can throw, because its Demo Mode banner reads `AI_MODE` and an
+invalid value (for example `AI_MODE=Demo`) throws by design (`src/lib/ai/mode.ts`).
+
+**Decision made:** Three files at the root of `src/app`, sharing one layout component
+(`src/components/app-state.tsx`) that uses the same header rhythm as every page. No new
+dependency, icon, illustration or color.
+- **`not-found.tsx`** handles every unmatched URL and every `notFound()` call, including the
+  ticket page's, so there is one not-found meaning. It renders inside the root layout, so
+  navigation stays. It is not framed as a failure: no "error" wording and no retry, just a link
+  to the Inbox. The copy says a link "may be mistyped or out of date", which is also the real
+  cause of a stale ticket link here: the demo database is rebuilt with new ids on each restart.
+- **`error.tsx`** is the root segment's error boundary. It wraps every page but not the root
+  layout, so a failed page (for example a database read) keeps the navigation and the Demo Mode
+  banner. It never catches `notFound()`: Next re-throws router signals past error boundaries.
+- **`global-error.tsx`** covers the one thing `error.tsx` cannot: a failure in the root layout.
+  It replaces the layout, so it renders its own document, styles and fonts (the fonts now live in
+  `src/app/fonts.ts`, shared with the layout) and has no navigation to keep, since the layout
+  that renders it is what failed. For the same reason it offers only "Try again".
+- **Recovery is `retry()`**, Next 16's boundary callback that refreshes the route's server data
+  (`router.refresh()`) and then re-renders the segment. `reset()` would only re-render, which
+  repeats a failed server render. The boundary also clears on navigation, so the nav and the
+  "Go to the Inbox" link recover too; that link is omitted when the failing page is the Inbox.
+- **No internal details:** the error's message is never rendered (it can contain paths,
+  queries or configuration, and the UI cannot know the cause). The copy is only "Something went
+  wrong". The one detail shown is Next's `digest`, an opaque id that matches the server log
+  entry, as an error reference. Focus moves to the state's heading when it appears.
+
+**Why not the alternatives:** *Per-route `error.tsx` files* would duplicate one behavior five
+times. *`global-not-found.js`* (experimental) exists for apps whose layouts cannot compose a 404,
+which is not this app, and it would drop the navigation. *Showing the error message* would help
+debugging and leak internals. *Relying on `error.tsx` alone* would leave root-layout failures on
+the framework page.
+
+**Verification:** 5 unit tests render the boundary contract in node (heading, recovery
+controls, the Inbox link omitted on the Inbox, digest only when present, and a message containing
+a Prisma error, a file path and a key-shaped string never reaching the markup); 2 E2E tests (an
+unknown URL and an unknown ticket id both return 404 and render the state inside the shell).
+Browser, on production builds, with real failures and no code changes: a server pointed at an
+empty scratch database showed the error state inside the shell with focus on its heading; after
+the database was initialized underneath the running server, "Try again" (by keyboard) rendered the
+real Inbox, proving `retry()` re-fetches; navigating from a failed page cleared the boundary; the
+displayed error reference matched the server log. A server with `AI_MODE=Demo` showed the
+global error state with its own title and fonts, without mentioning `AI_MODE`. Contrast measured in
+both schemes for all three states: 0 WCAG AA failures.
+
+**Not done / limits:** `global-error.tsx` only appears in production builds (development shows
+Next's error overlay). For `notFound()` thrown by the dynamic ticket page, Next returns the 404
+with the state in the page payload rather than the initial HTML, so it needs JavaScript to
+display, and the document title settles on the layout's default rather than "Page not found"
+(TODO.md).

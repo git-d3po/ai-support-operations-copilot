@@ -38,6 +38,32 @@ test("the navigation shows the Halcyon workspace and marks exactly the current d
   await expect(nav.locator("[aria-current]")).toHaveCount(1);
 });
 
+test("an unknown address shows the not-found state inside the application shell", async ({ page }) => {
+  const response = await page.goto("/this-page-does-not-exist");
+  expect(response?.status()).toBe(404);
+
+  await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  // It is not presented as a failure.
+  await expect(page.getByText(/something went wrong/i)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  // The shell stays: navigation (with nothing marked current) and the Demo Mode banner.
+  await expect(page.getByRole("navigation")).toBeVisible();
+  await expect(page.getByRole("navigation").locator("[aria-current]")).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Demo Mode" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Go to the Inbox" }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+});
+
+test("an unknown ticket id resolves to the same not-found state, within the Inbox area", async ({ page }) => {
+  const response = await page.goto("/tickets/does-not-exist");
+  expect(response?.status()).toBe(404);
+
+  await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Inbox", exact: true })).toHaveAttribute("aria-current", "true");
+});
+
 test("the Demo Mode banner is visible on every page", async ({ page }) => {
   for (const route of ["/inbox", "/operations", "/evaluations", "/knowledge", "/settings"]) {
     await page.goto(route);

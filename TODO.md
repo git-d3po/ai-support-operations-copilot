@@ -62,13 +62,19 @@ DECISIONS.md. This is what's left.
   dark-mode surface hierarchy; shared presentation labels
   (`src/lib/labels.ts`); the decision-first ticket page; grouped navigation
   with a route-aware active state (AUDIT.md DES-10); an AI Operations page
-  that explains Demo Mode's empty run metrics (AUDIT.md DES-23). Next
+  that explains Demo Mode's empty run metrics (AUDIT.md DES-23); not-found
+  and error states (AUDIT.md DES-24). Next
   passes, in order:
-  - Root `not-found.tsx` and `error.tsx` (AUDIT.md DES-24).
   - Motion that communicates state: a spinner and `aria-busy` on "Run
     analysis", consistent `focus-visible` rings, `transition-colors`, and
     either whole-row click or no row hover in the Inbox (AUDIT.md DES-9).
+    "Run analysis" should adopt `PRIMARY_ACTION_CLASSES` from
+    `src/components/app-state.tsx` (same values, plus the focus ring) rather
+    than repeating them.
   - Loading states (`loading.tsx`) for the first load after a demo restart.
+- Ticket not-found title: for an unknown ticket id the document title settles on
+  the layout default instead of "Page not found", because the ticket page has no
+  `generateMetadata` (DECISIONS.md, "Application not-found and error states").
 - Knowledge: show each policy's text, so a citation lands on something
   readable (AUDIT.md DES-25); optionally re-add the arrival highlight with a
   small client-side hash listener (the `:target` version was removed, since
