@@ -5,7 +5,9 @@ import { geistMono, geistSans } from "./fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Support Operations Copilot",
+  // Each page names itself ("Inbox · AI Support Operations Copilot"), so tabs and history are distinguishable.
+  // Pages, the ticket's generateMetadata and app/not-found.tsx set only their own name.
+  title: { template: "%s · AI Support Operations Copilot", default: "AI Support Operations Copilot" },
   description: "Internal support operations copilot for the fictional Halcyon SaaS platform.",
 };
 

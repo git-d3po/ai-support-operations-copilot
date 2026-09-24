@@ -193,6 +193,23 @@ export const AGENT_FLAG_LABELS: Record<KnownFlag, string> = {
   ungrounded_policy_citation: "Ungrounded policy citation",
 };
 
+/**
+ * Display order for lists of ticket statuses and priorities (e.g. ticket volume on AI Operations):
+ * statuses in workflow order, as defined on `Ticket.status` in schema.prisma; priorities most urgent
+ * first. Alphabetical order ("High, Low, Medium, Urgent") reads as unsorted to an operator.
+ */
+export const TICKET_STATUS_ORDER: readonly string[] = ["open", "pending", "escalated", "resolved", "closed"];
+export const PRIORITY_ORDER: readonly string[] = ["urgent", "high", "medium", "low"];
+
+/** Sorts rows by where their canonical value sits in `order`; unknown values follow, alphabetically. */
+export function sortByDisplayOrder<T>(rows: readonly T[], valueOf: (row: T) => string, order: readonly string[]): T[] {
+  const rank = (value: string) => {
+    const index = order.indexOf(value);
+    return index === -1 ? order.length : index;
+  };
+  return [...rows].sort((a, b) => rank(valueOf(a)) - rank(valueOf(b)) || valueOf(a).localeCompare(valueOf(b)));
+}
+
 export const labelTicketStatus = (value: string) => lookup(TICKET_STATUS_LABELS, value);
 export const labelPriority = (value: string) => lookup(PRIORITY_LABELS, value);
 export const labelChannel = (value: string) => lookup(CHANNEL_LABELS, value);

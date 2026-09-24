@@ -2768,3 +2768,70 @@ ticket yet." stays visible beside the busy button during a first run (TODO.md).
 width; a failed request is announced inline and keeps the ticket; the keyboard flow now matches
 rendered text). Two negative controls (a 0ms delay, and the old handler) each fail their test.
 Duplicate submission re-checked: a double-click and a triple Enter each send one request.
+
+## 2026-09-24 — Ticket state vs AI recommendation, and a product voice without self-narration
+
+**Context:** a read-only design audit (AUDIT.md, Audit #10) found the Inbox mixing three different
+things in one tone map: the ticket's real status, the AI's recommendation, and pipeline outcomes.
+"Escalated" was red in the Status column and amber in the AI column of the same row, and proposed
+actions ("Refund customer", "Auto-resolve") used the success green of a resolved ticket, while the
+ticket was still Open and nothing had been executed. Separately, several pages narrated the project
+itself ("not a placeholder", "nothing here is a mockup", source-file paths, references to
+DECISIONS.md and EVALUATION.md, a stale "Phase 2" note).
+
+**Decision: three vocabularies, each with its own tone rule** (documented in
+`src/components/ticket-labels.tsx`):
+- **Ticket status** is the ticket's actual workflow state. Only a state that is true may carry an
+  outcome tone: Escalated is danger, Resolved and Closed are success.
+- **AI recommendation** is a proposal; nothing in this app executes it. It is shown with the
+  action's imperative label ("Escalate", "Refund customer", "Auto-resolve"), never in the success
+  tone: a recommended escalation is a warning badge (it needs a person), and every other
+  recommendation is plain text. The Inbox column reads "AI" visually, "AI recommendation" to screen
+  readers, and the page lead says it is a proposal.
+- **Step outcome** (agent trace, evaluation results) is what a step or a scored run actually
+  produced ("Succeeded", "Failed", "Pass"), so it may use outcome tones.
+
+Badge text is sentence case ("Simulated (demo)", "Not run", "Pass (0.95)"); canonical identifiers
+(scenario keys such as `duplicate-billing`, the `eval:` tag) are shown as-is.
+
+**Decision: the product speaks about the operator's work, not about itself.** Page leads say what
+the data is and what the operator can do; provenance stays (Demo Mode, Simulated, scripted replay,
+Not sent, Human review required), because that is operational truth, not project narration. No
+source paths or repository documents are referenced from the UI.
+
+**Related presentation decisions in the same pass:**
+- **Page titles** use a root template, "%s · AI Support Operations Copilot"; a ticket is titled by its
+  subject, and an unknown ticket id by "Page not found" (fixing the earlier TODO).
+- **AI Operations in Demo Mode** leads with ticket volume, then one notice that carries the two true
+  zeros (runs, invocations) instead of seven empty metric tiles and an empty usage table. Metric
+  semantics are unchanged: simulated runs are still excluded, and nothing is filled in. Statuses are
+  listed in workflow order and priorities most urgent first (`TICKET_STATUS_ORDER`,
+  `PRIORITY_ORDER` in `labels.ts`), not alphabetically.
+- **Knowledge shows each entry's stored text**, so a policy citation lands on the policy itself. The
+  Markdown bodies are read by a small block reader (`src/lib/knowledgeText.ts`) that covers exactly
+  the constructs the seeded bodies use and produces React elements, never HTML; no dependency was
+  added. A unit test checks every seeded body renders every word and no Markdown syntax.
+- **Links** use the muted-foreground token for their underline (`LINK_CLASSES`); the old
+  `border`-colored underline was ~1.3:1 against the page and read as plain text.
+- **Billing context is dated** (invoice issue date, transaction date and time), so claims about
+  timing can be checked. **Risk score** is shown as "n / 100", the range defined on
+  `Account.riskScore`; nothing more is claimed about it.
+- **Inbox density:** a date and its time each stay whole. The `eval:` key is allowed to wrap at a
+  hyphen: making it unbreakable widened the column enough to make the 1024px Inbox 18% taller
+  (measured), which cost more readability than the break.
+
+**Not changed:** routing, resolution rules, prompts, recordings, scoring, scenario expectations and
+seed data. Surfacing dates exposed one inconsistency that belongs to data, not UI: the
+duplicate-billing scenario seeds both charges at the same moment, while its scripted Billing
+finding says "~10 hours apart" (resolved: see the follow-up below).
+
+**Follow-up (same day): the recording, not the data, was corrected.** A read-only forensic check
+(AUDIT.md, DES-48) found the stored timestamps authoritative: both charges are stored at the same
+instant, the pipeline's deterministic duplicate detector computes 0 hours from them, and the live
+evaluation run reported "0 hours apart". The "~10 hours" wording was hand-written in an early mock
+response and carried into the Demo recording, and the scenario never required a gap: the policy
+asks for "within 48 hours" and the customer wrote "twice on the same day". So the recording was
+corrected to match the data ("0 hours apart"; "on the same day" in its summary) rather than the
+data being changed to match the recording, which would have bent the fixture to fit scripted text
+and left the stored live result disagreeing with the seed. No behavior or evaluation expectation
+changed.

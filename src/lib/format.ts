@@ -22,3 +22,8 @@ export function formatDateTime(date: Date): string {
     minute: "2-digit",
   });
 }
+
+/** The time of day alone ("5:00 AM"), for places that show the date beside it. */
+export function formatTime(date: Date): string {
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}

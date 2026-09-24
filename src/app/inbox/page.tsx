@@ -1,12 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { formatDateTime } from "@/lib/format";
-import { labelAction, labelChannel } from "@/lib/labels";
+import { formatDate, formatTime } from "@/lib/format";
+import { labelChannel } from "@/lib/labels";
 import { Badge } from "@/components/ui/Badge";
-import { PriorityLabel, StatusLabel } from "@/components/ticket-labels";
+import { PriorityLabel, RecommendationLabel, StatusLabel } from "@/components/ticket-labels";
 import type { ResolutionDecision } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Inbox" };
 
 export default async function InboxPage() {
   const tickets = await db.ticket.findMany({
@@ -23,8 +26,8 @@ export default async function InboxPage() {
     <div className="p-6">
       <h1 className="text-lg font-semibold">Inbox</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {tickets.length} tickets. The AI column reflects each ticket&apos;s actual latest orchestration
-        run, not a placeholder.
+        {tickets.length} tickets. The AI recommendation comes from each ticket&apos;s latest
+        analysis. It is a proposal: nothing is carried out automatically.
       </p>
 
       <div className="mt-4 overflow-x-auto">
@@ -37,7 +40,10 @@ export default async function InboxPage() {
               <th className="py-2 pr-4">Priority</th>
               <th className="py-2 pr-4">Channel</th>
               <th className="py-2 pr-4">Created</th>
-              <th className="py-2 pr-4">AI</th>
+              {/* Visually short, so the header is not the column's widest word; the full name is still announced. */}
+              <th className="py-2 pr-4">
+                AI<span className="sr-only"> recommendation</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -70,7 +76,11 @@ export default async function InboxPage() {
                   <PriorityLabel priority={ticket.priority} />
                 </td>
                 <td className="py-2 pr-4 text-muted-foreground">{labelChannel(ticket.channel)}</td>
-                <td className="py-2 pr-4 text-muted-foreground">{formatDateTime(ticket.createdAt)}</td>
+                {/* Date and time each stay whole: the cell wraps between them, never inside one. */}
+                <td className="py-2 pr-4 text-muted-foreground">
+                  <span className="whitespace-nowrap">{formatDate(ticket.createdAt)}</span>{" "}
+                  <span className="whitespace-nowrap">{formatTime(ticket.createdAt)}</span>
+                </td>
                 <td className="py-2 pr-4">
                   <AiIndicator
                     evaluationScenarioKey={ticket.evaluationCase?.scenarioKey ?? null}
@@ -93,17 +103,25 @@ function AiIndicator({
   evaluationScenarioKey: string | null;
   latestRun: { status: string; escalation: unknown; resolution: unknown } | null;
 }) {
-  const action = (latestRun?.resolution as ResolutionDecision | null)?.action;
+  // The recommendation, not an outcome (see ticket-labels.tsx). A recorded escalation always comes with
+  // the `escalate` action (resolve.ts); the fallback only covers a run persisted without a resolution.
+  const action =
+    (latestRun?.resolution as ResolutionDecision | null)?.action ?? (latestRun?.escalation != null ? "escalate" : null);
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {/* The scenario key is evaluation metadata, deliberately shown as its canonical identifier. */}
-      {evaluationScenarioKey && <Badge tone="neutral">eval: {evaluationScenarioKey}</Badge>}
-      {!latestRun && <span className="text-xs text-muted-foreground">Not analyzed</span>}
-      {latestRun?.status === "failed" && <Badge tone="danger">Analysis failed</Badge>}
-      {latestRun?.status === "completed" && latestRun.escalation != null && <Badge tone="warning">Escalated</Badge>}
-      {latestRun?.status === "completed" && latestRun.escalation == null && (
-        <Badge tone="success">{action ? labelAction(action) : "Resolved"}</Badge>
+    <div className="flex flex-wrap items-center gap-1 text-xs">
+      {/* The scenario key is evaluation metadata, deliberately shown as its canonical identifier. One box
+          (inline-block), so in a narrow column it wraps at a hyphen inside the tag instead of splitting the
+          tag's background across lines. Not no-wrap: an unbreakable key widened this column enough to make
+          the 1024px Inbox 18% taller (measured), which cost more readability than the break. */}
+      {evaluationScenarioKey && (
+        <Badge tone="neutral" className="inline-block">
+          eval: {evaluationScenarioKey}
+        </Badge>
       )}
+      {!latestRun && <span className="text-muted-foreground">Not analyzed</span>}
+      {latestRun?.status === "failed" && <Badge tone="danger">Analysis failed</Badge>}
+      {latestRun?.status === "completed" &&
+        (action ? <RecommendationLabel action={action} /> : <span className="text-muted-foreground">No recommendation</span>)}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AppState, PRIMARY_ACTION_CLASSES } from "@/components/app-state";
 
 export const metadata: Metadata = {
-  title: "Page not found · AI Support Operations Copilot",
+  title: "Page not found", // the root layout's title template adds the product name
 };
 
 /**

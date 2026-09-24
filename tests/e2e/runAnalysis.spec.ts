@@ -102,6 +102,10 @@ test("running demo analysis on the duplicate-billing ticket produces a persisted
   await citation.click();
   await expect(page).toHaveURL(/\/knowledge#policy-duplicate-charge-policy$/);
   await expect(page.locator("#policy-duplicate-charge-policy")).toBeInViewport();
+  // It lands on the policy's actual text, not just its name.
+  await expect(
+    page.locator("#policy-duplicate-charge-policy").getByText(/Confirmed duplicate charges are refunded in full/),
+  ).toBeVisible();
 });
 
 test("running it again is idempotent: the same result, and still exactly one demo run", async ({ page }) => {
@@ -125,13 +129,23 @@ test("AI Operations excludes the demo run from real metrics, and says why", asyn
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "AI Operations" })).toBeVisible();
 
-  // The demo run is not counted: the run metric is a true zero, not hidden or inflated.
-  await expect(page.getByText("Orchestration runs", { exact: true }).locator("xpath=following-sibling::p")).toHaveText("0");
-  await expect(page.getByText("No real-model invocations to show. Demo analyses are not counted here.")).toBeVisible();
-
   // One explanation, naming Demo Mode as the reason, with the count it excluded.
   const notice = page.getByRole("region", { name: "Run metrics are empty in Demo Mode" });
   await expect(notice).toBeVisible();
+
+  // The demo run is not counted: the run metrics are a true zero, shown in the notice, not hidden or inflated.
+  await expect(notice.getByText("Orchestration runs", { exact: true }).locator("xpath=following-sibling::dd")).toHaveText("0");
+  await expect(notice.getByText("Agent invocations", { exact: true }).locator("xpath=following-sibling::dd")).toHaveText("0");
+  // With nothing real to count, the page does not lay out a grid of empty metric tiles or a per-step usage table.
+  await expect(page.getByText("Escalation rate", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Usage by pipeline step")).toHaveCount(0);
+  // Ticket volume, which does not depend on runs, leads the page in workflow and urgency order.
+  await expect(page.getByRole("heading", { name: "Ticket volume by priority" }).locator("xpath=following-sibling::ul/li/span[1]")).toHaveText([
+    "Urgent",
+    "High",
+    "Medium",
+    "Low",
+  ]);
   await expect(notice.getByText(/In Demo Mode, analyses are scripted replays and no model is called/)).toBeVisible();
   await expect(notice.getByText(/^1 simulated run is recorded in this deployment and excluded from every metric/)).toBeVisible();
 
@@ -167,6 +181,24 @@ test("a second, different scenario works: suspicious-activity routes to Risk and
   await expect(page.getByText("Refund customer", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/refunded it in full/i)).toHaveCount(0);
   await expect(page.getByText(RAW_TAXONOMY_IDENTIFIER)).toHaveCount(0);
+});
+
+test("the Inbox shows each analyzed ticket's recommendation as a proposal, never as a completed outcome", async ({ page }) => {
+  await page.goto("/inbox");
+  const recommendationCell = (subject: string) =>
+    page.locator("tbody tr").filter({ hasText: subject }).locator("td").nth(6);
+
+  // Escalation is recommended, not done: the ticket is still Open, and the AI column says "Escalate", not "Escalated".
+  const security = recommendationCell("Unrecognized login and API key on our account");
+  await expect(security.getByText("Escalate", { exact: true })).toBeVisible();
+  await expect(security).not.toContainText("Escalated");
+  await expect(page.locator("tbody tr").filter({ hasText: "Unrecognized login" }).locator("td").nth(2)).toHaveText("Open");
+
+  // A proposed refund is plain text in the operator's words, not a green "done" badge.
+  const refund = page.locator("tbody tr").filter({ hasText: "Charged twice this billing cycle" }).locator("td").nth(6);
+  const label = refund.getByText("Refund customer", { exact: true });
+  await expect(label).toBeVisible();
+  expect(await label.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
 });
 
 test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {

@@ -72,8 +72,8 @@ export const DEMO_RECORDINGS: Record<string, DemoRecording> = {
       }),
       billing_agent_finding: JSON.stringify({
         agentKey: "billing",
-        summary: "Confirmed two identical $399.00 charges on the same invoice within hours.",
-        evidence: ["Two succeeded charges of $399.00 on the same invoice, ~10 hours apart"],
+        summary: "Confirmed two identical $399.00 charges on the same invoice on the same day.",
+        evidence: ["Two succeeded charges of $399.00 on the same invoice, 0 hours apart"],
         confidence: 0.95,
         policyReferences: [],
         flags: ["duplicate_charge_confirmed"],

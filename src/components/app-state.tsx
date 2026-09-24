@@ -9,9 +9,16 @@ import type { ReactNode, Ref } from "react";
 export const PRIMARY_ACTION_CLASSES =
   "inline-block rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 
-/** A secondary action: the app's in-text link style (as on policy citations). */
-export const SECONDARY_ACTION_CLASSES =
-  "rounded text-sm font-medium underline decoration-border underline-offset-2 transition-colors hover:decoration-current";
+/**
+ * The app's in-text link: an underline in the muted-foreground token, so a link is recognizable at rest
+ * (the earlier `border`-colored underline measured ~1.3:1 against the page and read as plain text), and
+ * the full text color on hover. Used for policy citations and other links inside prose or tables.
+ */
+export const LINK_CLASSES =
+  "rounded underline decoration-muted-foreground underline-offset-2 transition-colors hover:decoration-current";
+
+/** A secondary action: the in-text link style at action weight. */
+export const SECONDARY_ACTION_CLASSES = `text-sm font-medium ${LINK_CLASSES}`;
 
 /**
  * The layout shared by the application's own states that replace a page: not

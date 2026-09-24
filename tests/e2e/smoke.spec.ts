@@ -235,6 +235,10 @@ test("opening a curated ticket shows the customer, conversation, and account con
   await expect(context.getByText("Sam Okafor", { exact: true })).toBeVisible();
   await expect(context.getByText("Vertexcraft", { exact: true })).toBeVisible();
   await expect(context.getByRole("heading", { name: "Account" })).toBeVisible();
+  // Billing history is dated, so timing claims (a refund window, charges hours apart) can be checked here.
+  await expect(context.getByText(/^Issued [A-Z][a-z]{2} \d{1,2}, \d{4}$/).first()).toBeVisible();
+  await expect(context.getByText(/^[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M$/).first()).toBeVisible();
+  await expect(context.getByText("/ 100")).toBeVisible();
   await expect(page.getByText(/refund/i).first()).toBeVisible();
   await expect(page.getByText("No AI analysis has been run on this ticket yet.")).toBeVisible();
 });
@@ -258,10 +262,50 @@ test("Evaluations distinguishes Demo Mode from historical live results and never
   await expect(page.getByText(/scripted replays and are never evaluation results/)).toBeVisible();
 });
 
-test("Knowledge page lists seeded policies and product docs", async ({ page }) => {
+test("Knowledge page lists seeded policies and product docs, with their text", async ({ page }) => {
   await page.goto("/knowledge");
-  await expect(page.getByText("Refund Policy")).toBeVisible();
-  await expect(page.getByText("Known Issue: Automations Time Out on Large Boards")).toBeVisible();
+  // Headings, not text: each entry's body now appears too, and bodies mention other policies by name.
+  await expect(page.getByRole("heading", { name: "Refund Policy" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Known Issue: Automations Time Out on Large Boards" })).toBeVisible();
+  // The body is readable text: Markdown syntax is rendered, not shown.
+  const refund = page.locator("#policy-refund-policy");
+  await expect(refund.getByText(/Duplicate charges/).first()).toBeVisible();
+  await expect(refund).not.toContainText("**");
+  await expect(refund.locator("ol > li")).toHaveCount(4);
+});
+
+test("the Evaluations table has one cell per column in every row, with readable labels", async ({ page }) => {
+  await page.goto("/evaluations");
+  const headers = page.locator("thead th");
+  await expect(headers).toHaveText(["Scenario", "Ticket", "Expected", "Actual", "Dimensions", "Result"]);
+  const counts = await page.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.children.length));
+  expect(counts).toEqual(Array(11).fill(6));
+
+  const row = page.locator("tbody tr").filter({ hasText: "duplicate-billing" });
+  await expect(row.locator("td").nth(1).getByRole("link", { name: "Charged twice this billing cycle" })).toBeVisible();
+  await expect(row.locator("td").nth(2)).toContainText("Duplicate charge");
+  await expect(row.locator("td").nth(2)).toContainText("Refund customer");
+  await expect(row.locator("td").nth(2)).not.toContainText("duplicate_charge");
+  await expect(row.locator("td").nth(5)).toHaveText("Not run");
+});
+
+test("every page names itself in the document title", async ({ page }) => {
+  const expected: [string, string][] = [
+    ["/inbox", "Inbox"],
+    ["/operations", "AI Operations"],
+    ["/evaluations", "Evaluations"],
+    ["/knowledge", "Knowledge"],
+    ["/settings", "Settings"],
+    ["/this-page-does-not-exist", "Page not found"],
+    ["/tickets/does-not-exist", "Page not found"],
+  ];
+  for (const [route, title] of expected) {
+    await page.goto(route);
+    await expect(page).toHaveTitle(`${title} · AI Support Operations Copilot`);
+  }
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "Charged twice this billing cycle" }).click();
+  await expect(page).toHaveTitle("Charged twice this billing cycle · AI Support Operations Copilot");
 });
 
 test("Settings page shows real model routing config", async ({ page }) => {

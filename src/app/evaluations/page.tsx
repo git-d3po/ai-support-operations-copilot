@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getAiMode } from "@/lib/ai/mode";
 import { db } from "@/lib/db";
+import { LINK_CLASSES } from "@/components/app-state";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { labelAction, labelAgentShort, labelIntent } from "@/lib/labels";
 import type {
   EvaluationExpectedOutcome,
   EvaluationResult as EvaluationResultScores,
@@ -11,6 +14,8 @@ import type {
 } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Evaluations" };
 
 const DIMENSION_LABELS: { key: keyof EvaluationResultScores; label: string }[] = [
   { key: "classificationCorrect", label: "Classification" },
@@ -44,7 +49,7 @@ export default async function EvaluationsPage() {
     <div className="p-6">
       <h1 className="text-lg font-semibold">Evaluations</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {cases.length} curated scenarios with known expected outcomes (see EVALUATION.md).
+        {cases.length} curated scenarios, each scored against a known expected outcome.
       </p>
 
       <div className="mt-2 flex flex-col gap-1 text-sm">
@@ -53,8 +58,8 @@ export default async function EvaluationsPage() {
           {liveScoredCases.length === 0 ? (
             <span className="text-muted-foreground">
               {getAiMode() === "demo"
-                ? "no historical live results are included in this Demo Mode deployment. Demo analyses are scripted replays and are never evaluation results. See EVALUATION.md."
-                : "not run yet — requires a real ANTHROPIC_API_KEY and an explicit request; see EVALUATION.md and DECISIONS.md. No score below is a substitute for this."}
+                ? "no historical live results are included in this Demo Mode deployment. Demo analyses are scripted replays and are never evaluation results."
+                : "not run yet. A live evaluation calls the configured model and runs only when explicitly started. No result below substitutes for it."}
             </span>
           ) : (
             <span>
@@ -66,10 +71,10 @@ export default async function EvaluationsPage() {
         {simulatedScoredCases.length > 0 && (
           <Card tone="info" padding="sm">
             {simulatedScoredCases.length} scenario(s) below also have a{" "}
-            <strong>SIMULATED</strong> result from a deterministic fixture-provider dry run —
-            this validates that the pipeline and scorer are wired correctly end to end. It is{" "}
-            <strong>not a measurement of real model performance</strong> and is visually
-            distinguished from any live result throughout this page.
+            <strong>simulated</strong> result from a deterministic fixture dry run, which checks that
+            the pipeline and scoring run end to end. It is{" "}
+            <strong>not a measurement of real model performance</strong>, and it is marked Simulated
+            wherever it appears.
           </Card>
         )}
       </div>
@@ -99,34 +104,30 @@ export default async function EvaluationsPage() {
 
             return (
               <tr key={evalCase.id} className="border-b border-zinc-100 align-top dark:border-zinc-900">
-                <td className="py-2 pr-4 font-medium">
-                  {evalCase.scenarioKey}
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    <Link href={`/tickets/${evalCase.ticketId}`} className="hover:underline">
-                      {evalCase.ticket.subject}
-                    </Link>
-                  </div>
+                {/* The canonical scenario key, deliberately shown as-is: it is the scenario's identifier. */}
+                <td className="whitespace-nowrap py-2 pr-4 font-medium">{evalCase.scenarioKey}</td>
+                <td className="py-2 pr-4">
+                  <Link href={`/tickets/${evalCase.ticketId}`} className={LINK_CLASSES}>
+                    {evalCase.ticket.subject}
+                  </Link>
                 </td>
                 <td className="py-2 pr-4 text-xs">
-                  intent: {expected.expectedIntent}
-                  <br />
-                  agents: {expected.expectedAgents.join(", ")}
-                  <br />
-                  escalate: {expected.expectedEscalation ? "yes" : "no"}
-                  <br />
-                  action: {expected.expectedAction}
+                  <OutcomeLines
+                    intent={labelIntent(expected.expectedIntent)}
+                    specialists={expected.expectedAgents.map(labelAgentShort).join(", ")}
+                    escalated={expected.expectedEscalation}
+                    action={labelAction(expected.expectedAction)}
+                  />
                 </td>
                 <td className="py-2 pr-4 text-xs">
                   {!run ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
-                    <>
-                      intent: {actualClassification?.intent ?? "—"}
-                      <br />
-                      escalate: {actualEscalated ? "yes" : "no"}
-                      <br />
-                      action: {actualResolution?.action ?? "—"}
-                    </>
+                    <OutcomeLines
+                      intent={actualClassification ? labelIntent(actualClassification.intent) : "—"}
+                      escalated={actualEscalated ?? false}
+                      action={actualResolution ? labelAction(actualResolution.action) : "—"}
+                    />
                   )}
                 </td>
                 <td className="py-2 pr-4">
@@ -147,13 +148,13 @@ export default async function EvaluationsPage() {
                 </td>
                 <td className="py-2 pr-4">
                   {!result || !scores ? (
-                    <span className="text-xs text-muted-foreground">not run</span>
+                    <span className="text-xs text-muted-foreground">Not run</span>
                   ) : (
                     <div className="flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-1">
-                        {result.isSimulated && <Badge tone="info">simulated</Badge>}
+                        {result.isSimulated && <Badge tone="info">Simulated</Badge>}
                         <Badge tone={result.passed ? "success" : "danger"}>
-                          {result.passed ? "pass" : "fail"} ({scores.overallScore.toFixed(2)})
+                          {result.passed ? "Pass" : "Fail"} ({scores.overallScore.toFixed(2)})
                         </Badge>
                       </div>
                       {!result.passed && (
@@ -169,13 +170,42 @@ export default async function EvaluationsPage() {
       </table>
 
       <Card dashed padding="lg" className="mt-6 text-sm text-muted-foreground">
-        Dimensions scored per case: classification, routing, policy, escalation, and resolution
-        correctness (exact match against the expected outcome — <code>◦</code> means &ldquo;not
-        applicable&rdquo; for that scenario), plus an evidence-quality heuristic folded into the overall
-        score. See EVALUATION.md for the full rubric and DECISIONS.md for why evaluation is scored
-        this way, including how a <Badge tone="info">simulated</Badge> result differs from a real
-        one.
+        Each scenario is scored on five dimensions: classification, routing, policy, escalation and
+        resolution, each an exact match against the expected outcome (✓ correct, ✗ incorrect, ◦ not
+        applicable to that scenario). An evidence-quality check is folded into the overall score. A{" "}
+        <Badge tone="info">Simulated</Badge> result comes from a fixture provider, not a real model.
       </Card>
     </div>
+  );
+}
+
+/** An expected or actual outcome, in the operator's vocabulary (src/lib/labels.ts); the canonical values are unchanged. */
+function OutcomeLines({
+  intent,
+  specialists,
+  escalated,
+  action,
+}: {
+  intent: string;
+  /** Only the expected outcome names specialists; the actual routing is on the ticket's own page. */
+  specialists?: string;
+  escalated: boolean;
+  action: string;
+}) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+      <dt className="text-muted-foreground">Intent</dt>
+      <dd>{intent}</dd>
+      {specialists !== undefined && (
+        <>
+          <dt className="text-muted-foreground">Specialists</dt>
+          <dd>{specialists}</dd>
+        </>
+      )}
+      <dt className="text-muted-foreground">Escalation</dt>
+      <dd>{escalated ? "Yes" : "No"}</dd>
+      <dt className="text-muted-foreground">Action</dt>
+      <dd>{action}</dd>
+    </dl>
   );
 }

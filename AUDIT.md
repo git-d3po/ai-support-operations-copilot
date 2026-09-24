@@ -532,3 +532,62 @@ Four findings fixed, DES-3 and DES-14 resolved. Verified: typecheck, lint, 433 u
 three repeats. Browser (Playwright screenshots, light and dark, with and without reduced motion):
 busy state readable and focus ring kept; the inline failure message at 7.6:1 (light) and 8.4:1
 (dark); focus stays on the button through a run and after a failure.
+
+## Audit #10 — Design Lead + Senior PM: correctness and credibility (2026-09-24)
+
+Scope: a read-only forensic audit of the rendered product (every route; 1440, 1024 and 390px;
+light and dark; DOM-measured colors, headings, table structure and titles), followed by a bounded
+implementation pass for its must-fix and should-fix findings. Rationale in DECISIONS.md ("Ticket
+state vs AI recommendation, and a product voice without self-narration").
+
+### Findings
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-35 | Evaluations table: 6 header cells over 5 data cells, so expected outcomes sat under "Ticket", "Expected"/"Actual" showed "—" and "Result" was always empty. | P0 | **Fixed** — the ticket has its own cell; E2E asserts 6 cells in every row. |
+| DES-36 | Self-referential copy in the product ("not a placeholder", "nothing here is a mockup", "not a mockup", "nothing here is invisible to the operator"), source paths, references to DECISIONS.md/EVALUATION.md, and a stale "Phase 2" note on Settings. | P1 | **Fixed** — rewritten as operator-facing copy; provenance kept. |
+| DES-37 | "Escalated" was red (status) and amber (AI column) in one row; proposed actions used success green while the ticket was Open and nothing had been executed. | P1 | **Fixed** — three vocabularies with separate tone rules (ticket-labels.tsx); E2E asserts "Escalate", not "Escalated", and a non-badge "Refund customer". |
+| DES-38 | Invoices and transactions had no dates, so timing claims (refund window, charges hours apart) could not be checked. | P1 | **Fixed** — issue date and transaction date/time in the account panel. |
+| DES-39 | AI Operations in Demo Mode (the public default) was a grid of seven 0/—/$0.0000 tiles plus an empty usage table; ticket volume was sorted alphabetically ("High, Low, Medium, Urgent"). | P1 | **Fixed** — ticket volume first, in workflow/urgency order; one notice with the two true zeros; the tile grid (real data only) no longer leaves an empty slot. |
+| DES-40 | Policy citations landed on a card with only title, category, slug and version, though each policy's text is stored. | P1 | **Fixed** (DES-25) — Knowledge renders every policy's and document's text. |
+| DES-41 | Every page had the same document title; an unknown ticket id kept the default title. | P2 | **Fixed** — per-page titles through a root template; ticket pages use the subject. |
+| DES-42 | Inbox at 1024px: dates wrapped to three lines, breaking inside the date. | P2 | **Fixed** — date and time each stay whole (two lines at most); the Inbox is ~3% shorter at 1024px than before (measured). The `eval:` key may still wrap at a hyphen: an unbreakable key made the page 18% taller. |
+| DES-43 | Evaluations showed raw identifiers (`intent: general_inquiry`, `action: reply_and_monitor`); badges mixed lower and sentence case. | P2 | **Fixed** — labels from labels.ts (scenario keys unchanged); sentence-case badges. |
+| DES-44 | Settings: the step column mixed a name and agent descriptions; model ids wrapped mid-token; no Demo Mode context. | P2 | **Fixed** — step name plus description, mono unbroken model ids, one Demo Mode sentence. |
+| DES-45 | Link underlines used the border token (~1.3:1), so citations read as plain text. | P2 | **Fixed** — muted-foreground underline (`LINK_CLASSES`). |
+| DES-46 | Risk score had no scale. | P2 | **Fixed** — "n / 100", the range defined on `Account.riskScore`; no direction or threshold claimed. |
+| DES-47 | AI Operations' seven metric labels were `h3` headings under the Demo notice's `h2`. | P3 | **Fixed** — tile labels are plain text (same appearance); real run metrics sit under their own "Run metrics" heading. |
+
+### Deferred (TODO.md)
+
+Mobile layout (broken at 390px: fixed sidebar, overlapping ticket aside; explicitly out of scope
+and a product decision), a labelled snapshot of live evaluation results in Demo Mode (a product
+decision), seed-data realism, a mode-independent "no action taken" note on live drafts,
+consolidating provenance notices on the ticket page, navigation naming, and agent-name
+consistency. Found while verifying: the duplicate-billing fixture seeds both charges at the same
+moment while its scripted finding says "~10 hours apart" (closed; see the follow-up below).
+
+### Follow-up: duplicate-billing evidence (closed, 2026-09-24)
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-48 | Once transaction times were shown (DES-38), the duplicate-billing ticket displayed two $399.00 charges at the same time while the scripted Billing finding said "~10 hours apart". | P2 | **Fixed** — see below. |
+
+A read-only forensic check established:
+- **The stored data is authoritative.** Both transactions are stored at `2026-09-15T12:00:00.000Z`
+  (`occurredDaysAgo: 3` twice in `prisma/data/scenarios.ts`, unchanged since the first commit).
+  The live pipeline's deterministic duplicate detector computes 0 hours apart from them, and the
+  live evaluation run on this scenario reported "0 hours apart" and passed.
+- **The claim came from the recording.** "~10 hours apart" was hand-written in an early mock
+  response and carried into `src/lib/demo/recordings.ts`; it was never derived from the scenario.
+- **The scenario does not require a gap.** Its expectation, the Duplicate Charge Policy ("within
+  48 hours") and the customer's message ("twice on the same day") are all satisfied at 0 hours.
+  No test, scoring rule, prompt or resolution rule reads the evidence wording.
+
+Correction: only the recording's two strings changed: evidence "~10 hours apart" became "0 hours
+apart", and summary "within hours" became "on the same day". Seed data, scenario, policy,
+orchestration, routing, scoring and evaluation expectations are unchanged; the recommendation is
+still Refund customer (Billing and Policy, policy "approve", no escalation, no human review).
+Verified: typecheck and lint clean, 129 targeted recording/provider/orchestrator tests and 454 unit
+tests pass, 24/24 Demo Mode E2E tests pass (against a scratch database), and the `dev.db` and
+`eval.db` checksums are unchanged.

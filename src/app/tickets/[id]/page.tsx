@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -5,7 +6,7 @@ import { db } from "@/lib/db";
 import { getAiMode } from "@/lib/ai/mode";
 import { DEMO_PROVIDER_KEY, isSimulatedProvider } from "@/lib/ai/providers/provenance";
 import { DEMO_CURATED_ONLY_MESSAGE, hasDemoRecording } from "@/lib/demo/recordings";
-import { formatCents, formatDateTime } from "@/lib/format";
+import { formatCents, formatDate, formatDateTime } from "@/lib/format";
 import {
   labelAccountPlan,
   labelAccountStatus,
@@ -26,6 +27,7 @@ import {
   labelTransactionStatus,
   labelTransactionType,
 } from "@/lib/labels";
+import { LINK_CLASSES } from "@/components/app-state";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Eyebrow, SectionHeading } from "@/components/ui/SectionHeading";
@@ -44,6 +46,13 @@ import {
 } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
+
+/** The ticket's subject names the tab; an unknown id gets the not-found state's title, like the page itself. */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const ticket = await db.ticket.findUnique({ where: { id }, select: { subject: true } });
+  return { title: ticket?.subject ?? "Page not found" };
+}
 
 /**
  * Ticket detail: the operator's working view of one ticket.
@@ -215,16 +224,24 @@ export default async function TicketDetailPage({
               <dt className="text-muted-foreground">MRR</dt>
               <dd className="tabular-nums">{formatCents(account.mrrCents)}</dd>
               <dt className="text-muted-foreground">Risk score</dt>
-              <dd className="tabular-nums">{account.riskScore}</dd>
+              {/* The score's defined range (schema.prisma: "0-100"); nothing more is claimed about it here. */}
+              <dd className="tabular-nums">
+                {account.riskScore}
+                <span className="text-muted-foreground"> / 100</span>
+              </dd>
             </dl>
 
             <Eyebrow as="h4" className="mt-4">
               Recent invoices
             </Eyebrow>
-            <ul className="mt-1 flex flex-col gap-1">
+            {/* Dated, so what an analysis says about timing (a refund window, two charges hours apart) can be checked here. */}
+            <ul className="mt-1 flex flex-col gap-1.5">
               {account.invoices.map((invoice) => (
                 <li key={invoice.id} className="flex justify-between gap-4">
-                  <span>{labelInvoiceStatus(invoice.status)}</span>
+                  <span>
+                    {labelInvoiceStatus(invoice.status)}
+                    <span className="block text-xs text-muted-foreground">Issued {formatDate(invoice.issuedAt)}</span>
+                  </span>
                   <span className="tabular-nums">{formatCents(invoice.amountCents)}</span>
                 </li>
               ))}
@@ -233,12 +250,13 @@ export default async function TicketDetailPage({
             <Eyebrow as="h4" className="mt-4">
               Recent transactions
             </Eyebrow>
-            <ul className="mt-1 flex flex-col gap-1">
+            <ul className="mt-1 flex flex-col gap-1.5">
               {account.transactions.map((tx) => (
                 <li key={tx.id} className="flex justify-between gap-4">
                   <span>
                     {labelTransactionType(tx.type)}
                     <span className="text-muted-foreground"> · {labelTransactionStatus(tx.status)}</span>
+                    <span className="block text-xs text-muted-foreground">{formatDateTime(tx.occurredAt)}</span>
                   </span>
                   <span className="tabular-nums">{formatCents(tx.amountCents)}</span>
                 </li>
@@ -486,7 +504,7 @@ function AgentTraceCard({ invocation, knownPolicySlugs }: { invocation: Invocati
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{labelAgent(agentKey)}</span>
         <div className="flex gap-1">
-          {isSimulated && <Badge tone="info">simulated ({provider})</Badge>}
+          {isSimulated && <Badge tone="info">Simulated ({provider})</Badge>}
           <Badge tone={status === "succeeded" ? "success" : "danger"}>{labelInvocationStatus(status)}</Badge>
         </div>
       </div>
@@ -562,10 +580,7 @@ function AgentTraceCard({ invocation, knownPolicySlugs }: { invocation: Invocati
 function PolicyCitation({ reference, known }: { reference: PolicyReference; known: boolean }) {
   if (!known) return <span className="font-medium">{reference.title}</span>;
   return (
-    <Link
-      href={`/knowledge#policy-${reference.slug}`}
-      className="font-medium underline decoration-border underline-offset-2 hover:decoration-current"
-    >
+    <Link href={`/knowledge#policy-${reference.slug}`} className={`font-medium ${LINK_CLASSES}`}>
       {reference.title}
     </Link>
   );

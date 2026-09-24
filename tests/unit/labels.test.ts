@@ -26,10 +26,13 @@ import {
   TICKET_STATUS_LABELS,
   TRANSACTION_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
+  PRIORITY_ORDER,
+  TICKET_STATUS_ORDER,
   humanizeIdentifier,
   labelAction,
   labelAgentFlag,
   labelTeam,
+  sortByDisplayOrder,
 } from "@/lib/labels";
 
 /**
@@ -93,5 +96,29 @@ describe("fallbacks for values without an explicit label", () => {
 
   it("do not match inherited object properties", () => {
     expect(labelAction("toString")).toBe("ToString");
+  });
+});
+
+describe("display order for ticket statuses and priorities", () => {
+  it("covers exactly the labeled values", () => {
+    expect([...TICKET_STATUS_ORDER].sort()).toEqual(Object.keys(TICKET_STATUS_LABELS).sort());
+    expect([...PRIORITY_ORDER].sort()).toEqual(Object.keys(PRIORITY_LABELS).sort());
+  });
+
+  it("puts statuses in workflow order and priorities most urgent first, not alphabetically", () => {
+    const byStatus = sortByDisplayOrder(
+      ["closed", "escalated", "open", "pending", "resolved"].map((status) => ({ status })),
+      (row) => row.status,
+      TICKET_STATUS_ORDER,
+    );
+    expect(byStatus.map((row) => row.status)).toEqual(["open", "pending", "escalated", "resolved", "closed"]);
+    const byPriority = sortByDisplayOrder(["high", "low", "medium", "urgent"], (p) => p, PRIORITY_ORDER);
+    expect(byPriority).toEqual(["urgent", "high", "medium", "low"]);
+  });
+
+  it("keeps an unknown value, after the known ones, and does not mutate its input", () => {
+    const input = ["zeta", "low", "alpha", "urgent"];
+    expect(sortByDisplayOrder(input, (p) => p, PRIORITY_ORDER)).toEqual(["urgent", "low", "alpha", "zeta"]);
+    expect(input).toEqual(["zeta", "low", "alpha", "urgent"]);
   });
 });
