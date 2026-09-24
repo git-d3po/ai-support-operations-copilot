@@ -2678,3 +2678,43 @@ Next's error overlay). For `notFound()` thrown by the dynamic ticket page, Next 
 with the state in the page payload rather than the initial HTML, so it needs JavaScript to
 display, and the document title settles on the layout's default rather than "Page not found"
 (TODO.md).
+
+## 2026-09-23 — Interaction conventions: one focus ring, busy states that keep focus, whole-row Inbox links
+
+**Context:** An inventory of every interactive element (AUDIT.md, Audit #8) found correct
+semantics everywhere (links navigate, buttons act, the agent trace is a native `<details>`), but
+four inconsistencies: two copies of a focus-ring class string and the browser default everywhere
+else; "Run analysis" dropping keyboard focus while it ran; Inbox rows that highlighted on hover
+though only the subject was clickable; and no announcement of a run's start, end or failure.
+
+**Decision made:**
+- **One focus treatment, global:** a `:focus-visible` rule in `globals.css`'s base layer draws a
+  2px outline in `--foreground`, offset 2px, on every focusable control. It inverts with the
+  colour scheme, uses no new colour, and needs no class, so a new control cannot miss it.
+  `:where()` keeps its specificity at zero, so a component can still move the ring (the Inbox row
+  draws it around the row). The same controls carry the ring's colour before focus, so a colour
+  transition cannot fade the ring in.
+- **Busy is not disabled:** while an action runs, the control keeps focus (`aria-disabled` plus a
+  guard in the handler), because a focused native button that becomes `disabled` drops focus to
+  `<body>`. Native `disabled` is reserved for controls that cannot be used at all, with the reason
+  attached via `aria-describedby`. The busy label names what is running, and a polite
+  `role="status"` region announces start and completion; failures use `role="alert"`. `aria-busy`
+  was not used: it describes a region whose content is updating, not a button.
+- **Whole-row Inbox links:** a queue is scanned and opened row by row, and the hover already
+  promised it. The subject link's `::after` stretches over the row (the `<tr>` is its containing
+  block), so the whole row is one link, one keyboard stop, with no nested interactive element.
+  Trade-off: text in an Inbox row cannot be selected by dragging with the mouse.
+- **Motion is minimal:** 150ms colour transitions on hover (nav links, primary and secondary
+  actions, Inbox rows, the trace summary) and a spinner only while "Run analysis" is busy. No
+  page, banner or metric animation. A base-layer `prefers-reduced-motion: reduce` rule stops all
+  transitions and animations, and the spinner is hidden then (the label says it is running).
+
+**Why not the alternatives:** *A shared `<Button>` component* would add an abstraction to fix what
+is a styling concern; the ring is global CSS, and the primary style is already one exported class
+string. *Removing the Inbox row hover* was the other correct option, but it would make the queue
+less efficient to work through. *A custom disclosure component* would re-implement what
+`<details>` already does correctly.
+
+**Verification:** 19 E2E tests (2 new) and the browser, in both colour schemes; the keyboard test
+fails if the old `disabled`-while-busy behavior is restored (checked). Reduced motion was checked
+with Playwright's emulation.

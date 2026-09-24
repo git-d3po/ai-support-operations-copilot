@@ -42,9 +42,20 @@ export default async function InboxPage() {
           </thead>
           <tbody>
             {tickets.map((ticket) => (
-              <tr key={ticket.id} className="border-b border-zinc-100 hover:bg-surface dark:border-zinc-900">
+              // The whole row opens the ticket, through its one link: the subject link's
+              // ::after stretches over the row (the row is its containing block), so a
+              // click anywhere lands on the link, keyboard users meet one stop per row,
+              // and there are no nested interactive elements. Its focus ring is drawn
+              // around the row, since the row is what it opens.
+              <tr
+                key={ticket.id}
+                className="group relative border-b border-zinc-100 transition-colors hover:bg-surface dark:border-zinc-900"
+              >
                 <td className="py-2 pr-4">
-                  <Link href={`/tickets/${ticket.id}`} className="font-medium hover:underline">
+                  <Link
+                    href={`/tickets/${ticket.id}`}
+                    className="font-medium group-hover:underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-foreground"
+                  >
                     {ticket.subject}
                   </Link>
                 </td>

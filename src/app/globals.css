@@ -65,6 +65,39 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@layer base {
+  /* The one keyboard-focus treatment: a 2px outline in the foreground color,
+   * offset from the element, in both color schemes (it inverts with the page).
+   * Applies to every focusable control so none falls back to the browser
+   * default; `:where()` keeps specificity at zero, so a component can still
+   * move the ring deliberately (the Inbox row draws it around the whole row).
+   * Programmatic focus targets (tabindex="-1", e.g. a state's heading) are
+   * excluded: they are not keyboard stops. */
+  /* The ring's colour is set before focus too (the outline is invisible until
+   * then). Otherwise it starts from `currentColor`, and a control with
+   * `transition-colors` visibly fades the ring in from its text colour (white on
+   * the primary button) instead of showing it at once. */
+  :where(a[href], button, summary, input, select, textarea, [tabindex]:not([tabindex="-1"])) {
+    outline-color: var(--foreground);
+  }
+  :where(a[href], button, summary, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--foreground);
+    outline-offset: 2px;
+  }
+
+  /* Motion is limited to short colour transitions and the "Run analysis"
+   * spinner; with reduced motion requested, all of it stops. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
 /* The page's background and text come from here only; <body> in layout.tsx
  * sets layout, not color. */
 body {

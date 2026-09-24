@@ -64,6 +64,81 @@ test("an unknown ticket id resolves to the same not-found state, within the Inbo
   await expect(page.getByRole("navigation").getByRole("link", { name: "Inbox", exact: true })).toHaveAttribute("aria-current", "true");
 });
 
+test("keyboard only: from the Inbox into a ticket, through its analysis and its agent trace", async ({ page }) => {
+  const focusedText = () => page.evaluate(() => document.activeElement?.textContent?.trim() ?? "");
+  const tabUntil = async (text: string | RegExp) => {
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      const focused = await focusedText();
+      if (typeof text === "string" ? focused === text : text.test(focused)) return;
+    }
+    throw new Error(`Tab never reached ${text}`);
+  };
+
+  // One stop per Inbox row: the row's ticket link, with the focus ring drawn around the row.
+  await page.goto("/inbox");
+  await tabUntil("Charged twice this billing cycle");
+  expect(await page.evaluate(() => getComputedStyle(document.activeElement!, "::after").outlineStyle)).toBe("solid");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/tickets\//);
+
+  // "Run analysis" is a real button with a visible focus ring. (Its label depends on whether this
+  // ticket already has a run: this test does not rely on another test having run first.)
+  await tabUntil(/^Run demo analysis( again)?$/);
+  expect(await page.evaluate(() => getComputedStyle(document.activeElement!).outlineStyle)).toBe("solid");
+
+  // Slow the Server Action down so the busy state can be observed (a demo replay otherwise takes ~30ms).
+  await page.route("**/tickets/**", async (route) => {
+    if (route.request().method() === "POST") await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.continue();
+  });
+  let actionPosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST") actionPosts++;
+  });
+
+  await page.keyboard.press("Enter");
+  const busy = page.getByRole("button", { name: "Running demo analysis…" });
+  await expect(busy).toHaveAttribute("aria-disabled", "true");
+  await expect(busy).toBeFocused(); // busy, but focus is not dropped to the page
+  await page.keyboard.press("Enter"); // pressed again while busy: must not submit twice
+
+  const done = page.getByRole("button", { name: "Run demo analysis again" });
+  await expect(done).toBeFocused({ timeout: 10_000 });
+  await expect(done).not.toHaveAttribute("aria-disabled");
+  expect(actionPosts).toBe(1);
+  await expect(page.getByRole("status").filter({ hasText: "Demo analysis complete." })).toBeAttached();
+
+  // The agent trace is a native disclosure, operable from the keyboard.
+  await page.keyboard.press("Tab");
+  await expect(page.getByText("Agent trace (4 steps)")).toBeFocused();
+  await expect(page.getByText("Billing Agent")).toBeHidden();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Billing Agent")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Billing Agent")).toBeHidden();
+});
+
+test("clicking anywhere on an Inbox row opens that row's ticket, through its one link", async ({ page }) => {
+  await page.goto("/inbox");
+  const row = page.locator("tbody tr").filter({ hasText: "Refund request — upgraded by mistake" });
+  // The customer cell, not the subject link.
+  const box = (await row.locator("td").nth(1).boundingBox())!;
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  // What is under the pointer there is the row's own ticket link (no second interactive element).
+  const hit = await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    return { tag: el?.tagName, text: el?.textContent?.trim() };
+  }, point);
+  expect(hit).toEqual({ tag: "A", text: "Refund request — upgraded by mistake" });
+  await expect(row.locator("a, button")).toHaveCount(1);
+
+  await page.mouse.click(point.x, point.y);
+  await expect(page).toHaveURL(/\/tickets\//);
+  await expect(page.getByRole("heading", { level: 1, name: "Refund request — upgraded by mistake" })).toBeVisible();
+});
+
 test("the Demo Mode banner is visible on every page", async ({ page }) => {
   for (const route of ["/inbox", "/operations", "/evaluations", "/knowledge", "/settings"]) {
     await page.goto(route);

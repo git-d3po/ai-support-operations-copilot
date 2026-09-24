@@ -63,14 +63,9 @@ DECISIONS.md. This is what's left.
   (`src/lib/labels.ts`); the decision-first ticket page; grouped navigation
   with a route-aware active state (AUDIT.md DES-10); an AI Operations page
   that explains Demo Mode's empty run metrics (AUDIT.md DES-23); not-found
-  and error states (AUDIT.md DES-24). Next
+  and error states (AUDIT.md DES-24); interaction, focus and motion (AUDIT.md
+  Audit #8). Next
   passes, in order:
-  - Motion that communicates state: a spinner and `aria-busy` on "Run
-    analysis", consistent `focus-visible` rings, `transition-colors`, and
-    either whole-row click or no row hover in the Inbox (AUDIT.md DES-9).
-    "Run analysis" should adopt `PRIMARY_ACTION_CLASSES` from
-    `src/components/app-state.tsx` (same values, plus the focus ring) rather
-    than repeating them.
   - Loading states (`loading.tsx`) for the first load after a demo restart.
 - Ticket not-found title: for an unknown ticket id the document title settles on
   the layout default instead of "Page not found", because the ticket page has no

@@ -447,7 +447,8 @@ function DecisionTrace({
       </ol>
 
       <details className="mt-4">
-        <summary className="cursor-pointer select-none text-sm font-medium text-zinc-700 hover:text-foreground dark:text-zinc-300">
+        {/* Native disclosure: keyboard (Enter/Space), open state and semantics come from the browser. */}
+        <summary className="cursor-pointer select-none rounded text-sm font-medium text-zinc-700 transition-colors hover:text-foreground dark:text-zinc-300">
           Agent trace ({invocations.length} steps)
         </summary>
         <div className="mt-2 flex flex-col gap-2">

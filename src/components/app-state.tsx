@@ -1,17 +1,17 @@
 import type { ReactNode, Ref } from "react";
 
-/**
- * Focus treatment for the recovery actions: the same visible foreground ring the
- * navigation uses (see nav-link.tsx), so keyboard focus looks the same everywhere
- * a user is being moved on from a problem.
+/*
+ * Keyboard focus for these actions comes from the global focus rule in
+ * globals.css, shared by every control in the app.
  */
-const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground";
 
-/** The primary action: the app's existing primary button (as on "Run analysis"). */
-export const PRIMARY_ACTION_CLASSES = `inline-block rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 ${FOCUS_RING}`;
+/** The primary action: the app's primary button, shared with "Run analysis". */
+export const PRIMARY_ACTION_CLASSES =
+  "inline-block rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 
-/** A secondary action: the app's existing in-text link style (as on policy citations). */
-export const SECONDARY_ACTION_CLASSES = `rounded text-sm font-medium underline decoration-border underline-offset-2 hover:decoration-current ${FOCUS_RING}`;
+/** A secondary action: the app's in-text link style (as on policy citations). */
+export const SECONDARY_ACTION_CLASSES =
+  "rounded text-sm font-medium underline decoration-border underline-offset-2 transition-colors hover:decoration-current";
 
 /**
  * The layout shared by the application's own states that replace a page: not

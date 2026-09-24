@@ -23,8 +23,8 @@ export function NavLink({ item }: { item: NavItem }) {
       href={item.href}
       aria-current={state === "page" ? "page" : state === "section" ? "true" : undefined}
       className={[
-        "relative block rounded px-2 py-1.5 text-sm",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground",
+        // Focus ring: the global rule in globals.css. Colour changes ease over 150ms.
+        "relative block rounded px-2 py-1.5 text-sm transition-colors",
         state
           ? "bg-zinc-200 font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground dark:bg-zinc-800"
           : "text-zinc-700 hover:bg-zinc-100 hover:text-foreground dark:text-zinc-300 dark:hover:bg-zinc-800/60",

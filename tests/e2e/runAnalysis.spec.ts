@@ -175,8 +175,11 @@ test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {
   await page.locator("tbody tr").filter({ hasNotText: "eval:" }).first().getByRole("link").first().click();
   await expect(page).toHaveURL(/\/tickets\//);
 
-  await expect(page.getByRole("button", { name: "Run demo analysis" })).toBeDisabled();
+  const unavailable = page.getByRole("button", { name: "Run demo analysis" });
+  await expect(unavailable).toBeDisabled();
   await expect(page.getByText("Demo Mode is available for the curated evaluation scenarios only.")).toBeVisible();
+  // The reason is attached to the button itself, so assistive technology reads it with the control.
+  await expect(unavailable).toHaveAccessibleDescription("Demo Mode is available for the curated evaluation scenarios only.");
   await expect(page.getByText("No AI analysis has been run on this ticket yet.")).toBeVisible();
   await expect(page.getByText("SIMULATED RUN", { exact: false })).toHaveCount(0);
 
