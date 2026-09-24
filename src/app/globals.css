@@ -65,6 +65,40 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Delayed busy presentation (DECISIONS.md, "Loading and pending states"). An
+ * action's *semantic* busy state (aria-disabled, the duplicate-submit guard, the
+ * status announcement) is immediate; its *visual* busy state (label, spinner,
+ * dimming) appears only if the action is still running after 400ms. Measured:
+ * a Demo Mode analysis finishes in ~16-21ms, so without the delay the busy
+ * label flashed for one frame on every run; a live analysis takes seconds, so
+ * its indicator still appears well within the ~1s it takes a wait to break an
+ * operator's flow. Pure CSS (an animation delay), so no timers or extra state.
+ * The reduced-motion rule below shortens animation durations, not delays, so
+ * the reveal still happens then; only the spinner's rotation is suppressed.
+ */
+@theme {
+  --animate-busy-reveal: busy-reveal 0s linear 400ms forwards;
+  --animate-busy-conceal: busy-conceal 0s linear 400ms forwards;
+  --animate-busy-dim: busy-dim 0s linear 400ms forwards;
+
+  @keyframes busy-reveal {
+    to {
+      visibility: visible;
+    }
+  }
+  @keyframes busy-conceal {
+    to {
+      visibility: hidden;
+    }
+  }
+  @keyframes busy-dim {
+    to {
+      opacity: 0.8;
+    }
+  }
+}
+
 @layer base {
   /* The one keyboard-focus treatment: a 2px outline in the foreground color,
    * offset from the element, in both color schemes (it inverts with the page).

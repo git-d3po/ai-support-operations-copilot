@@ -60,7 +60,7 @@ absence is not counted as a finding below.
 |---|---|---|---|
 | DES-1 | The Inbox table had no horizontal-scroll handling and visibly clipped columns on a narrow (≈600px) viewport during a manual browser check. | P2 | **Fixed** — wrapped in `overflow-x-auto` with a `min-w` on the table. |
 | DES-2 | Visual design is intentionally unstyled beyond basic Tailwind utility classes — no component library, no real visual hierarchy or brand identity yet. | P2 | Expected and logged — see DECISIONS.md ("Deferring a UI component library"). Not a defect for this phase. |
-| DES-3 | No loading, empty-result, or error states designed for any page (e.g. an Inbox with zero tickets, or a failed query). | P2 | Logged in TODO.md for the UI-implementation phase. |
+| DES-3 | No loading, empty-result, or error states designed for any page (e.g. an Inbox with zero tickets, or a failed query). | P2 | **Resolved** — error states in 782bc71; empty states on AI Operations (DES-23) and the ticket page; loading investigated in Audit #9 and found unnecessary for routes (they render in 45–103ms, and `loading.tsx` would turn the ticket 404 into a 200). |
 | DES-4 | Layout is fixed-width desktop with no responsive/mobile handling. | Not a finding | Matches PRODUCT_SPEC.md's explicit non-goal ("Mobile support ... this is a dense, desktop-first operational tool"). Noted here only so it isn't rediscovered and mis-flagged later. |
 
 ### Outcome
@@ -369,7 +369,7 @@ below rather than re-described.
 | DES-11 | `public/` still holds the five default Next.js starter SVGs (`file.svg`, `globe.svg`, `next.svg`, `vercel.svg`, `window.svg`); confirmed by grep that none are referenced anywhere in `src/`. Scaffolding leftover, not a deliberate choice — undermines "credible product" on inspection (e.g. a recruiter opening dev tools or the repo). | P2 | **Fixed** (this session) — trivial and unreferenced, deleted while already doing a cleanup pass; no reason to defer it. |
 | DES-12 | Inbox's Status and Priority columns are plain, uncolored text — "Urgent" reads identically to "Low" — despite the color system already existing and being used one column over (the AI-result badges). | P2 | **Fixed** (this session) — a natural byproduct of migrating Inbox onto `Badge`: `urgent`/`escalated` are `tone="danger"`, `high` is `tone="warning"`, `resolved`/`closed` are `tone="success"`; `medium`/`low`/other statuses stay plain text on purpose, so the column doesn't become a wall of color. |
 | DES-13 | Dark mode is `prefers-color-scheme`-only (no in-app toggle) and is produced by swapping each `zinc-N` for `zinc-(1000-N)` per element rather than a deliberately tuned dark palette; background is pure near-black (`#0a0a0a`), harsher than the lifted dark grays typical of polished dark UIs (which read better once elevation/shadow is introduced). | P2 | **Surface hierarchy fixed** (Audit #7) — dark mode now has a deliberate `background` → `surface` lift and AA-passing muted text; the near-black background was kept. In-app toggle still open (TODO.md). |
-| DES-14 | Confirmed still accurate from Audit #1's Design Lead pass and TODO.md's "UI implementation phase": no loading skeletons anywhere; the only two empty states (`operations/page.tsx`'s "No agent invocations recorded yet" and `tickets/[id]/page.tsx`'s "No AI analysis has been run yet") are plain, unstyled text with no affordance. | P1 | Not fixed — carried forward, not new. |
+| DES-14 | Confirmed still accurate from Audit #1's Design Lead pass and TODO.md's "UI implementation phase": no loading skeletons anywhere; the only two empty states (`operations/page.tsx`'s "No agent invocations recorded yet" and `tickets/[id]/page.tsx`'s "No AI analysis has been run yet") are plain, unstyled text with no affordance. | P1 | **Resolved** — empty states in Audits #7/DES-23; loading skeletons deliberately not added (Audit #9: measured, and they would flash and break the 404 status). |
 
 ### What's already better than it looks
 
@@ -496,3 +496,39 @@ transitions collapse and the spinner is hidden (checked with Playwright's `reduc
 emulation). One regression was introduced and fixed within the pass: the new colour transitions
 also animated `outline-color`, so the focus ring faded in from the button's white text colour;
 it now appears at once in its final colour.
+
+## Audit #9 — Design Lead: loading, pending and in-progress states (2026-09-24)
+
+Scope: every asynchronous boundary a user can see. There is one user-initiated action (the
+"Run analysis" Server Action) and five dynamic server-rendered pages (Inbox, ticket, AI
+Operations, Evaluations, Knowledge); no client-side fetching, `Suspense` or `loading.tsx`.
+Timings measured in a production build (Playwright, headless). Rationale in DECISIONS.md
+("Loading and pending states").
+
+### Design Lead review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-31 | A request failure during "Run analysis" (for example a dropped connection) made the awaited Server Action throw, which escaped to the route error boundary: the whole ticket was replaced by "Something went wrong", the running status went silent, and "Try again" reloaded the page instead of the analysis. | P1 | **Fixed** — caught in the handler and shown in the existing inline alert, worded honestly (the result is unknown; check before re-running, since a live run is not idempotent). E2E aborts the request; a negative control with the old handler fails it. |
+| DES-32 | In Demo Mode an analysis takes ~16–21ms, so the busy label and spinner (built for multi-second live runs) flashed for a single frame on every run. | P2 | **Fixed** — the visual busy state appears only after 400ms (CSS animation delay); semantic busy state stays immediate. E2E proves a 100ms run never shows it; a negative control with a 0ms delay fails. |
+| DES-33 | The busy label changed the button's width (186px → 203px → 186px), so the header jittered on every run. | P2 | **Fixed** — both labels share one grid cell; width constant in both colour schemes and under reduced motion. |
+| DES-34 | When the inline error appeared, the "Run analysis" button jumped left (the wrapper widened around the message). Pre-existing. | P2 | **Fixed** — the wrapper is end-aligned; the button moves 0px. |
+
+### Investigated and left unchanged (with evidence)
+
+- **Route loading:** page renders take 1–10ms on the server; client-side navigation measured
+  45–55ms (103ms on the first click, which also loads JavaScript). A loading fallback would
+  flash, and `loading.tsx` makes a route stream, which returns HTTP 200 for `notFound()`,
+  breaking the 404 contract established in 782bc71. Not added; nor is `useLinkStatus`.
+- **Loading before data:** every page is server-rendered, so the first HTML already holds the
+  resolved state (data, empty state or Demo Mode notice); there is no "empty, then data".
+- **Error recovery "Try again":** a re-fetch of a few milliseconds; no pending UI needed.
+- **Duplicate submission:** re-verified: a double-click and a triple Enter each send one request.
+
+### Outcome
+
+Four findings fixed, DES-3 and DES-14 resolved. Verified: typecheck, lint, 433 unit tests, the
+`AI_MODE=demo` build and 21 E2E tests (3 new); the three timing-sensitive tests passed 9/9 over
+three repeats. Browser (Playwright screenshots, light and dark, with and without reduced motion):
+busy state readable and focus ring kept; the inline failure message at 7.6:1 (light) and 8.4:1
+(dark); focus stays on the button through a run and after a failure.

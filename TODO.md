@@ -49,7 +49,6 @@ DECISIONS.md. This is what's left.
   components (menus, dialogs, comboboxes) are needed (DECISIONS.md,
   "Design foundation: semantic tokens, presentation labels, and a
   decision-first ticket page").
-- Loading, empty, and error states for every page (AUDIT.md DES-3).
 - Inbox: filtering, search, sort, and pagination (AUDIT.md PM-2, PM-3).
 - De-duplicate the "Run AI analysis" failure message, which currently
   shows once as the button's own inline error and again in the persisted
@@ -64,12 +63,19 @@ DECISIONS.md. This is what's left.
   with a route-aware active state (AUDIT.md DES-10); an AI Operations page
   that explains Demo Mode's empty run metrics (AUDIT.md DES-23); not-found
   and error states (AUDIT.md DES-24); interaction, focus and motion (AUDIT.md
-  Audit #8). Next
-  passes, in order:
-  - Loading states (`loading.tsx`) for the first load after a demo restart.
+  Audit #8); loading and pending states (AUDIT.md Audit #9). The items
+  below are the remaining UI follow-ups.
 - Ticket not-found title: for an unknown ticket id the document title settles on
   the layout default instead of "Page not found", because the ticket page has no
   `generateMetadata` (DECISIONS.md, "Application not-found and error states").
+- Measure client-side navigation on the deployed demo (locally 45–103ms). If it is
+  regularly above ~300ms, add a delayed pending hint to the nav with `useLinkStatus`
+  (NavLink is already a client component); not `loading.tsx`, which would make an unknown
+  ticket return 200 instead of 404 (DECISIONS.md, "Loading and pending states").
+- Live mode only: during a first live analysis (seconds long), the AI section still shows
+  "No AI analysis has been run on this ticket yet." beside the busy button. True, but
+  could say the run is in progress; that needs the section's pending state, which lives in
+  the client button, so it is deferred rather than moving server-rendered content to the client.
 - Knowledge: show each policy's text, so a citation lands on something
   readable (AUDIT.md DES-25); optionally re-add the arrival highlight with a
   small client-side hash listener (the `:target` version was removed, since

@@ -2718,3 +2718,53 @@ less efficient to work through. *A custom disclosure component* would re-impleme
 **Verification:** 19 E2E tests (2 new) and the browser, in both colour schemes; the keyboard test
 fails if the old `disabled`-while-busy behavior is restored (checked). Reduced motion was checked
 with Playwright's emulation.
+
+## 2026-09-24 — Loading and pending states: measured, truthful, and only where they help
+
+**Context:** A loading pass could easily add skeletons and spinners everywhere. The app's actual
+asynchronous surface is small: one user-initiated action ("Run analysis", a Server Action) and
+five dynamic, server-rendered pages, with no client-side fetching. Measured in a production build:
+server renders take 1–10ms, client-side navigation 45–55ms (103ms on the first click, which also
+loads JavaScript), and a Demo Mode analysis 16–21ms; a live analysis takes seconds.
+
+**Decision made:**
+- **State model.** Loading (a route rendering), action pending ("Run analysis"), empty, error,
+  unavailable and resolved are distinct. Pages are server-rendered, so the first response already
+  holds the resolved state; an empty state or the Demo Mode notice is never shown before the data
+  is known. The app has no background refresh, so there is no stale-while-refreshing state.
+- **No route-level loading UI.** At 45–103ms a fallback would only flash. And `loading.tsx` makes
+  a route stream, which fixes the HTTP status at 200 before the page runs, so an unknown ticket's
+  `notFound()` would become a soft 404, breaking the not-found contract (DECISIONS.md, "Application
+  not-found and error states"). `useLinkStatus` is not added either; see TODO.md for the trigger.
+- **Semantic busy state immediate, visual busy state delayed.** When an action starts,
+  `aria-disabled`, the duplicate-submit guard and the polite status announcement change at once.
+  The visible busy label, spinner and dimming appear only if it is still running after 400ms, via
+  CSS animation delays (`busy-*` in `globals.css`; the same technique Next documents for delayed
+  pending hints), with no timers or extra state. 400ms keeps a Demo Mode run (tens of
+  milliseconds, plus network) from flashing, while a live run still shows its indicator well
+  inside the ~1s after which a wait interrupts an operator's flow.
+- **No size change.** Both button labels share one grid cell, so the button keeps one width.
+- **A failed request stays inline and truthful.** A transport failure (the Server Action throws) is
+  caught and shown in the component's inline alert instead of escaping to the route error
+  boundary, which replaced the whole ticket. The message says the result is unknown and to reload
+  before re-running, because the server may have completed the run and a live run is not
+  idempotent. Server-reported failures still read "Analysis failed: …".
+- **Wording follows the mode.** "Running demo analysis…" and "Demo analysis complete." in Demo
+  Mode, "Running AI analysis…" in live mode; no "AI is thinking" copy, and nothing that implies a
+  model call during a scripted replay.
+
+**Accessibility:** focus stays on the button through a run and after a failure (checked on every
+frame); the status region announces start and completion, failures use `role="alert"`, and
+`aria-busy` is not used (it describes a region being updated, not a button). Reduced motion
+shortens animation durations, not delays, so the busy label still appears; only the spinner's
+rotation is hidden.
+
+**Trade-offs:** for the first 400ms of a run the button's accessible name is still the idle label
+(the state is conveyed by `aria-disabled` and the status announcement). The button is as wide as
+its longer label even at rest. In live mode, the AI section's "No AI analysis has been run on this
+ticket yet." stays visible beside the busy button during a first run (TODO.md).
+
+**Verification:** 21 E2E tests (3 new: a 100ms run never shows the busy label and never changes
+width; a failed request is announced inline and keeps the ticket; the keyboard flow now matches
+rendered text). Two negative controls (a 0ms delay, and the old handler) each fail their test.
+Duplicate submission re-checked: a double-click and a triple Enter each send one request.

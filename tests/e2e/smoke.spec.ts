@@ -65,7 +65,9 @@ test("an unknown ticket id resolves to the same not-found state, within the Inbo
 });
 
 test("keyboard only: from the Inbox into a ticket, through its analysis and its agent trace", async ({ page }) => {
-  const focusedText = () => page.evaluate(() => document.activeElement?.textContent?.trim() ?? "");
+  // innerText, not textContent: it is what is rendered (it skips visibility:hidden text, such as the
+  // run button's inactive label, just as the accessible name does).
+  const focusedText = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.innerText?.trim() ?? "");
   const tabUntil = async (text: string | RegExp) => {
     for (let i = 0; i < 40; i++) {
       await page.keyboard.press("Tab");
@@ -117,6 +119,71 @@ test("keyboard only: from the Inbox into a ticket, through its analysis and its 
   await expect(page.getByText("Billing Agent")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByText("Billing Agent")).toBeHidden();
+});
+
+test("a quick analysis does not flash a busy label or change the button's size", async ({ page }) => {
+  // A Demo Mode analysis normally finishes in ~20ms. Slowing the Server Action by only 100ms keeps the
+  // run in flight long enough to observe, while staying well under the 400ms visual threshold
+  // (globals.css, "busy-*"), so this cannot turn flaky on a slow machine. (The keyboard test above covers
+  // the other side: its 800ms run does reveal the busy label.)
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "Charged twice this billing cycle" }).click();
+  await expect(page).toHaveURL(/\/tickets\//);
+  await page.route("**/tickets/**", async (route) => {
+    if (route.request().method() === "POST") await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.continue();
+  });
+
+  const button = page.getByRole("button", { name: /^Run demo analysis/ });
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("main button")][0] as HTMLButtonElement;
+    const busyLabel = btn.querySelectorAll(":scope > span > span")[1];
+    const frames: { busy: boolean; busyVisible: boolean; width: number }[] = [];
+    (window as unknown as { __frames: typeof frames }).__frames = frames;
+    const t0 = performance.now();
+    const tick = () => {
+      frames.push({
+        busy: btn.getAttribute("aria-disabled") === "true",
+        busyVisible: getComputedStyle(busyLabel).visibility === "visible",
+        width: Math.round(btn.getBoundingClientRect().width),
+      });
+      if (performance.now() - t0 < 1500) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await button.click();
+  await expect(page.getByRole("status").filter({ hasText: "Demo analysis complete." })).toBeAttached();
+  await page.waitForTimeout(1600); // let the frame recorder finish its fixed window
+
+  const frames = await page.evaluate(() => (window as unknown as { __frames: { busy: boolean; busyVisible: boolean; width: number }[] }).__frames);
+  expect(frames.some((f) => f.busy)).toBe(true); // the run really was in flight...
+  expect(frames.some((f) => f.busyVisible)).toBe(false); // ...but too briefly to show a busy label
+  expect(new Set(frames.map((f) => f.width)).size).toBe(1); // and the button never changed width
+});
+
+test("a failed analysis request is announced inline and keeps the ticket on screen", async ({ page }) => {
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "Charged twice this billing cycle" }).click();
+  await expect(page).toHaveURL(/\/tickets\//);
+  // The request never reaches the server (a dropped connection).
+  await page.route("**/tickets/**", (route) => (route.request().method() === "POST" ? route.abort("connectionreset") : route.continue()));
+
+  const button = page.getByRole("button", { name: /^Run demo analysis/ });
+  await button.focus();
+  await page.keyboard.press("Enter");
+
+  // Inline, as an alert, and honest that the result is unknown (not "the analysis failed"). Scoped to the
+  // section: Next's own route announcer is also role="alert" after a client-side navigation.
+  await expect(page.getByRole("region", { name: "AI orchestration" }).getByRole("alert")).toHaveText(
+    "The analysis request did not complete, so its result is unknown. Reload the page to check whether it finished before running it again.",
+  );
+  // The ticket is still on screen: not replaced by the route's "Something went wrong" state.
+  await expect(page.getByRole("heading", { level: 1, name: "Charged twice this billing cycle" })).toBeVisible();
+  await expect(page.getByText("Something went wrong")).toHaveCount(0);
+  // The control is usable again, still focused, and no completion was announced.
+  await expect(button).toBeFocused();
+  await expect(button).not.toHaveAttribute("aria-disabled");
+  await expect(page.getByRole("status").filter({ hasText: "complete" })).toHaveCount(0);
 });
 
 test("clicking anywhere on an Inbox row opens that row's ticket, through its one link", async ({ page }) => {
