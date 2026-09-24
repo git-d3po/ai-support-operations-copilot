@@ -372,10 +372,11 @@ row produces the same "Seeded 101 customers, 92 tickets..." summary).
 ## What's deliberately not built yet
 
 See TODO.md for the full list. In one line: the full pipeline is now
-genuinely model-backed end to end and persisted, but the evaluation suite
-has not actually been *run* against a real provider (it requires
-`ANTHROPIC_API_KEY`, which isn't configured in this environment and, per
-project policy, is never used without being explicitly asked for first) —
-so the Evaluations page correctly shows "not run" rather than a fabricated
-score. UI visual polish, editable model routing from Settings, and Inbox
-filtering/pagination also remain deferred.
+genuinely model-backed end to end and persisted. When this was written, the
+evaluation suite had not yet been *run* against a real provider (it requires
+`ANTHROPIC_API_KEY`, which, per project policy, is never used without being
+explicitly asked for first). A live baseline has since been recorded in the
+local `eval.db` (see EVALUATION.md, "Current status"); the public Demo Mode
+deployment does not include it, so its Evaluations page shows "Not run"
+rather than a fabricated score. UI visual polish, editable model routing
+from Settings, and Inbox filtering/pagination also remain deferred.

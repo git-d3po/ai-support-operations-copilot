@@ -249,13 +249,21 @@ specific `OrchestrationRun` that was scored.
   (`src/lib/evaluation/runEvaluation.ts`, `scoreOutcome()` in `score.ts`,
   11 unit tests for the scorer's branch coverage, an integration test
   proving it never fabricates a result when the pipeline can't actually
-  run) — but **it has not been executed against a real model provider**.
-  There is no `ANTHROPIC_API_KEY` configured in this development
-  environment, and this project's standing rule is that no real model
-  credential is ever used without explicitly asking first (see
-  DECISIONS.md, "The evaluation runner refuses to run without a real,
-  user-provided API key"). The Evaluations page correctly shows "not run"
-  for every scenario as a result — that's accurate, not a placeholder.
+  run) — but when this status was written (2026-09-18) **it had not yet
+  been executed against a real model provider**. No `ANTHROPIC_API_KEY`
+  was configured in the development environment then, and this project's
+  standing rule is that no real model credential is ever used without
+  explicitly asking first (see DECISIONS.md, "The evaluation runner refuses
+  to run without a real, user-provided API key"). The Evaluations page
+  showed "not run" for every scenario as a result.
+- **Since then, live runs have been made** (DECISIONS.md, 2026-09-19 and
+  2026-09-20 entries). The stored live baseline is in the local, gitignored
+  `eval.db`: 10 non-simulated results from 2026-09-20, one per scenario
+  seeded at the time, 9 passed; `failed-payment` failed (0.57), which led
+  to the `failed_payment` resolution-precedence change (DECISIONS.md,
+  2026-09-20). That change and the later `out-of-window-refund` scenario
+  have not been measured live since. The public Demo Mode deployment does
+  not include these results, so its Evaluations page shows "Not run".
 - **`npm run test:e2e`'s `runAnalysis.spec.ts` is not a substitute for
   this.** It proves the pipeline's wiring, persistence, and UI rendering
   work end to end using a deterministic fixture provider tuned to one
