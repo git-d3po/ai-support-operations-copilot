@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getAiMode } from "@/lib/ai/mode";
 import { db } from "@/lib/db";
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
 import type {
   EvaluationExpectedOutcome,
   EvaluationResult as EvaluationResultScores,
@@ -41,7 +43,7 @@ export default async function EvaluationsPage() {
   return (
     <div className="p-6">
       <h1 className="text-lg font-semibold">Evaluations</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         {cases.length} curated scenarios with known expected outcomes (see EVALUATION.md).
       </p>
 
@@ -49,7 +51,7 @@ export default async function EvaluationsPage() {
         <p>
           <span className="font-medium">Live model evaluation: </span>
           {liveScoredCases.length === 0 ? (
-            <span className="text-zinc-500">
+            <span className="text-muted-foreground">
               {getAiMode() === "demo"
                 ? "no historical live results are included in this Demo Mode deployment. Demo analyses are scripted replays and are never evaluation results. See EVALUATION.md."
                 : "not run yet — requires a real ANTHROPIC_API_KEY and an explicit request; see EVALUATION.md and DECISIONS.md. No score below is a substitute for this."}
@@ -62,19 +64,19 @@ export default async function EvaluationsPage() {
           )}
         </p>
         {simulatedScoredCases.length > 0 && (
-          <p className="rounded border border-purple-200 bg-purple-50 p-2 text-purple-800 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300">
+          <Card tone="info" padding="sm">
             {simulatedScoredCases.length} scenario(s) below also have a{" "}
             <strong>SIMULATED</strong> result from a deterministic fixture-provider dry run —
             this validates that the pipeline and scorer are wired correctly end to end. It is{" "}
             <strong>not a measurement of real model performance</strong> and is visually
             distinguished from any live result throughout this page.
-          </p>
+          </Card>
         )}
       </div>
 
       <table className="mt-4 w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800">
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <th className="py-2 pr-4">Scenario</th>
             <th className="py-2 pr-4">Ticket</th>
             <th className="py-2 pr-4">Expected</th>
@@ -99,7 +101,7 @@ export default async function EvaluationsPage() {
               <tr key={evalCase.id} className="border-b border-zinc-100 align-top dark:border-zinc-900">
                 <td className="py-2 pr-4 font-medium">
                   {evalCase.scenarioKey}
-                  <div className="mt-1 text-xs text-zinc-400">
+                  <div className="mt-1 text-xs text-muted-foreground">
                     <Link href={`/tickets/${evalCase.ticketId}`} className="hover:underline">
                       {evalCase.ticket.subject}
                     </Link>
@@ -116,7 +118,7 @@ export default async function EvaluationsPage() {
                 </td>
                 <td className="py-2 pr-4 text-xs">
                   {!run ? (
-                    <span className="text-zinc-400">—</span>
+                    <span className="text-muted-foreground">—</span>
                   ) : (
                     <>
                       intent: {actualClassification?.intent ?? "—"}
@@ -129,7 +131,7 @@ export default async function EvaluationsPage() {
                 </td>
                 <td className="py-2 pr-4">
                   {!scores ? (
-                    <span className="text-xs text-zinc-400">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   ) : (
                     <div className="flex flex-col gap-0.5 text-xs">
                       {DIMENSION_LABELS.map(({ key, label }) => {
@@ -145,27 +147,17 @@ export default async function EvaluationsPage() {
                 </td>
                 <td className="py-2 pr-4">
                   {!result || !scores ? (
-                    <span className="text-xs text-zinc-400">not run</span>
+                    <span className="text-xs text-muted-foreground">not run</span>
                   ) : (
                     <div className="flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-1">
-                        {result.isSimulated && (
-                          <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-950 dark:text-purple-300">
-                            simulated
-                          </span>
-                        )}
-                        <span
-                          className={
-                            result.passed
-                              ? "rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                              : "rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300"
-                          }
-                        >
+                        {result.isSimulated && <Badge tone="info">simulated</Badge>}
+                        <Badge tone={result.passed ? "success" : "danger"}>
                           {result.passed ? "pass" : "fail"} ({scores.overallScore.toFixed(2)})
-                        </span>
+                        </Badge>
                       </div>
                       {!result.passed && (
-                        <p className="max-w-xs text-xs text-zinc-500">{scores.notes}</p>
+                        <p className="max-w-xs text-xs text-muted-foreground">{scores.notes}</p>
                       )}
                     </div>
                   )}
@@ -176,17 +168,14 @@ export default async function EvaluationsPage() {
         </tbody>
       </table>
 
-      <div className="mt-6 rounded border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+      <Card dashed padding="lg" className="mt-6 text-sm text-muted-foreground">
         Dimensions scored per case: classification, routing, policy, escalation, and resolution
         correctness (exact match against the expected outcome — <code>◦</code> means &ldquo;not
         applicable&rdquo; for that scenario), plus an evidence-quality heuristic folded into the overall
         score. See EVALUATION.md for the full rubric and DECISIONS.md for why evaluation is scored
-        this way, including how a{" "}
-        <span className="rounded bg-purple-100 px-1 text-purple-800 dark:bg-purple-950 dark:text-purple-300">
-          simulated
-        </span>{" "}
-        result differs from a real one.
-      </div>
+        this way, including how a <Badge tone="info">simulated</Badge> result differs from a real
+        one.
+      </Card>
     </div>
   );
 }

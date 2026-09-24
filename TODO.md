@@ -44,8 +44,11 @@ DECISIONS.md. This is what's left.
 
 ## UI implementation phase
 
-- Adopt a component library / design system (see DECISIONS.md, "Deferring
-  a UI component library") once real visual design direction exists.
+- Component library: not adopted. A small in-house primitive layer
+  (`src/components/ui/`) covers current needs; revisit if interactive
+  components (menus, dialogs, comboboxes) are needed (DECISIONS.md,
+  "Design foundation: semantic tokens, presentation labels, and a
+  decision-first ticket page").
 - Loading, empty, and error states for every page (AUDIT.md DES-3).
 - Inbox: filtering, search, sort, and pagination (AUDIT.md PM-2, PM-3).
 - De-duplicate the "Run AI analysis" failure message, which currently
@@ -54,6 +57,29 @@ DECISIONS.md. This is what's left.
   correct, just redundant once both are visible.
 - General visual pass: hierarchy, spacing, color usage consistent with "a
   credible modern B2B SaaS app" (PRODUCT_SPEC.md) rather than plain tables.
+  Done so far (AUDIT.md Audits #6 and #7): shared UI primitives and the
+  purple/indigo removal; neutral tokens with AA-passing muted text and a
+  dark-mode surface hierarchy; shared presentation labels
+  (`src/lib/labels.ts`); the decision-first ticket page. Next passes, in order:
+  - Navigation: active-route state, a Halcyon workspace line, grouping;
+    icons only if a dependency is justified (AUDIT.md DES-10).
+  - AI Operations in Demo Mode: an honest empty state (its "run AI analysis"
+    hint cannot fill metrics that deliberately exclude demo runs), keeping
+    simulated runs out of real metrics (AUDIT.md DES-23).
+  - Root `not-found.tsx` and `error.tsx` (AUDIT.md DES-24).
+  - Motion that communicates state: a spinner and `aria-busy` on "Run
+    analysis", consistent `focus-visible` rings, `transition-colors`, and
+    either whole-row click or no row hover in the Inbox (AUDIT.md DES-9).
+  - Loading states (`loading.tsx`) for the first load after a demo restart.
+- Knowledge: show each policy's text, so a citation lands on something
+  readable (AUDIT.md DES-25); optionally re-add the arrival highlight with a
+  small client-side hash listener (the `:target` version was removed, since
+  Next's `pushState` navigation never triggers `:target`).
+- Extract the remaining repeated table-header and page-header markup into
+  shared primitives.
+- Dark mode: optionally lift the page background from near-black once there is
+  something to tune against (AUDIT.md DES-13).
+- Add an in-app light/dark toggle (currently `prefers-color-scheme`-only).
 
 ## Model provider abstraction — possible future extensions
 

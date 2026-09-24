@@ -10,7 +10,7 @@ export function ModeBanner() {
   return (
     <div
       role="status"
-      className="border-b border-purple-200 bg-purple-50 px-4 py-1.5 text-xs font-medium text-purple-800 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300"
+      className="border-b border-blue-200 bg-blue-50 px-4 py-1.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
     >
       Demo Mode — synthetic data, scripted replay, no model is called
     </div>

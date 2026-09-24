@@ -345,3 +345,122 @@ left to the user, not decided here.
 **Readiness assessment: READY** for a controlled first live-model
 evaluation, pending the user providing `ANTHROPIC_API_KEY` and explicitly
 authorizing the run.
+
+## Audit #6 — Design Lead: visual design audit (2026-09-23)
+
+Scope: read-only visual/design review of every screen and shared component
+(`src/app/**/page.tsx`, `src/app/tickets/[id]/**`, `src/components/**`,
+`src/app/globals.css`), triggered by the goal of making the app read as a
+polished, top-tier product rather than a functional scaffold. Not in scope:
+orchestrator, evaluation, or data-model changes. One low-risk fix (the `body`
+font-family bug and an additive design-token layer in `globals.css`) was
+already applied ahead of this audit, at the user's request, and is re-verified
+below rather than re-described.
+
+### Design Lead review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-6 | `body` was hardcoded to `Arial, Helvetica, sans-serif`, ignoring the Geist font already loaded via `next/font` in `layout.tsx` — the loaded font was never actually applied. | P0 | **Fixed** (this session, prior to this audit) — `globals.css` now uses `var(--font-sans)`, verified by screenshot: Geist now renders. |
+| DES-7 | There is no shared `Card`/`Badge`/`Panel` component. The exact string `rounded border border-zinc-200 p-3\|p-4 dark:border-zinc-800` is hand-retyped in at least 9 places (`nav.tsx`, `operations/page.tsx` ×4, `evaluations/page.tsx`, `knowledge/page.tsx` ×2, `tickets/[id]/page.tsx` ×5), and the colored "badge" pattern (`rounded bg-X-100 px-1.5 py-0.5 text-xs font-medium text-X-800 dark:bg-X-950 dark:text-X-300`) is retyped per usage across `inbox/page.tsx`, `evaluations/page.tsx`, and `tickets/[id]/page.tsx`. This is the highest-leverage single fix: every other visual change (radius, elevation, badge color) currently requires a multi-file find-and-replace instead of a one-component edit, and copy-paste drift has already produced DES-8 below. | P1 | **Fixed** (Phase 1, this session) — `src/components/ui/{tone.ts,Card.tsx,Badge.tsx,SectionHeading.tsx,Stat.tsx}` extracted, and every page (`inbox`, `operations`, `evaluations`, `knowledge`, `settings`, `tickets/[id]`, `RunAnalysisButton`) migrated onto them. `nav.tsx` is deliberately not touched here — it's Phase 3 (active-route state), a different kind of change, not a card/badge. |
+| DES-8 | Two near-identical hues carry unrelated meanings: `indigo-100/700` marks "this ticket belongs to a curated eval scenario" (`inbox/page.tsx:99`, `tickets/[id]/page.tsx:75`), while `purple-100/800` marks "this result is simulated, not real" (`mode-banner.tsx`, and simulated badges in `evaluations/page.tsx`, `tickets/[id]/page.tsx` ×3). These read as nearly the same color at a glance (confirmed in the Inbox screenshot taken this session) — a viewer could misread a curated-scenario tag as a simulated-data warning, which is the opposite of what DECISIONS.md ("Honestly recording which provider actually served a call") is trying to keep unambiguous. | P1 | **Fixed** (this session, at the user's explicit request — "I don't like purples or indigos") — the eval-scenario tag is now `Badge tone="neutral"` (zinc, matching the app's own neutral-metadata convention) and "simulated" is now `tone="info"` (blue, previously unused in the app). Repo-wide grep confirms zero `purple`/`indigo`/`violet`/`fuchsia` classes remain in `src/`. Verified visually: screenshot of the Inbox and a ticket detail page (duplicate-billing, with its existing simulated demo run) shows the two are now unambiguous. |
+| DES-9 | Confirmed by repo-wide grep: no `shadow-*`, `transition`, `duration-*`, or `ease-*` class exists anywhere in `src/`. Every card, table row, and button is flat and instant — hover states are a bare background-color swap, there is no button press/active state, no focus-visible treatment beyond the browser default, and no loading indicator beyond `RunAnalysisButton` swapping its label to "Running…" during a multi-second server round trip. | P1 | **Elevation half fixed** (Audit #7) — tokens wired into Tailwind; `shadow-sm` deliberately used on one surface only (the ticket recommendation panel). Motion (focus rings, button feedback, transitions) still open. |
+| DES-10 | The one always-visible, always-identical element on every screen — the sidebar nav (`src/components/nav.tsx`) — has no active-route indicator (a user on `/inbox` sees an identical nav to a user on `/settings`) and no icons, only text labels. The component's own comment says this was deliberate for the foundation phase ("without investing in visual design yet"). | P1 | Not fixed — highest-visibility item after DES-7/8/9. |
+| DES-11 | `public/` still holds the five default Next.js starter SVGs (`file.svg`, `globe.svg`, `next.svg`, `vercel.svg`, `window.svg`); confirmed by grep that none are referenced anywhere in `src/`. Scaffolding leftover, not a deliberate choice — undermines "credible product" on inspection (e.g. a recruiter opening dev tools or the repo). | P2 | **Fixed** (this session) — trivial and unreferenced, deleted while already doing a cleanup pass; no reason to defer it. |
+| DES-12 | Inbox's Status and Priority columns are plain, uncolored text — "Urgent" reads identically to "Low" — despite the color system already existing and being used one column over (the AI-result badges). | P2 | **Fixed** (this session) — a natural byproduct of migrating Inbox onto `Badge`: `urgent`/`escalated` are `tone="danger"`, `high` is `tone="warning"`, `resolved`/`closed` are `tone="success"`; `medium`/`low`/other statuses stay plain text on purpose, so the column doesn't become a wall of color. |
+| DES-13 | Dark mode is `prefers-color-scheme`-only (no in-app toggle) and is produced by swapping each `zinc-N` for `zinc-(1000-N)` per element rather than a deliberately tuned dark palette; background is pure near-black (`#0a0a0a`), harsher than the lifted dark grays typical of polished dark UIs (which read better once elevation/shadow is introduced). | P2 | **Surface hierarchy fixed** (Audit #7) — dark mode now has a deliberate `background` → `surface` lift and AA-passing muted text; the near-black background was kept. In-app toggle still open (TODO.md). |
+| DES-14 | Confirmed still accurate from Audit #1's Design Lead pass and TODO.md's "UI implementation phase": no loading skeletons anywhere; the only two empty states (`operations/page.tsx`'s "No agent invocations recorded yet" and `tickets/[id]/page.tsx`'s "No AI analysis has been run yet") are plain, unstyled text with no affordance. | P1 | Not fixed — carried forward, not new. |
+
+### What's already better than it looks
+
+Re-verified while reading every page: the *information architecture* is
+sound and the color semantics, before DES-8's collision, are actually
+coherent and used consistently — zinc for neutral structure, emerald for
+approved/passed, amber for caution/escalation, red for denied/failed/error,
+purple for simulated. Every page's typography already follows one consistent
+three-step scale (`text-lg font-semibold` h1 / `text-sm font-semibold` h2-h3
+/ `text-xs uppercase tracking-wide text-zinc-500` eyebrow). This is a real
+foundation — the gap to "top-tier" is depth (elevation, motion, componentized
+consistency, an active nav state) on top of an already-sound structure, not a
+rebuild of the structure itself.
+
+### Outcome (as first written)
+
+No P0 remained open (the font bug was fixed ahead of this audit). Five P1s
+(DES-7, 8, 9, 10, 14) required enough surface area — a shared component
+layer touching every page, plus a nav rework — that CLAUDE.md's "ask first"
+bar applied loosely here: not because any one of them was a product-direction
+call, but because their honest scope was a multi-file visual pass, not an
+autonomous drive-by fix. Scoped into phases (Phase 1: primitives, Phase 2:
+elevation/motion, Phase 3: nav, Phase 4: ticket detail, Phase 5: remaining
+pages/polish) and presented for the user's go-ahead rather than fixed inline.
+
+### Phase 1 executed (2026-09-23, same day, on explicit go-ahead)
+
+The user approved Phase 1 and added one constraint: no purple, no indigo.
+`src/components/ui/{tone.ts,Card.tsx,Badge.tsx,SectionHeading.tsx,Stat.tsx}`
+were extracted and every page migrated onto them (DES-7, fixed). The purple
+→ blue / indigo → neutral recolor (DES-8) was folded into the same pass
+since it's the tone map the new `Badge`/`Card` consume, plus two trivial P2s
+already sitting in the same files (DES-11, DES-12). `--accent` in
+`globals.css` was updated to match (blue, was purple).
+
+Verified: repo-wide grep confirms zero `purple`/`indigo`/`violet`/`fuchsia`
+classes remain in `src/`. `typecheck`, `lint`, `test` (412 passed), and
+`AI_MODE=demo npm run build` all pass. Visually verified via screenshot
+against the real seeded database: Inbox (neutral eval tags, colored
+status/priority) and a ticket detail page with an existing simulated run
+(blue "SIMULATED RUN" banner, blue "simulated (demo)" badges, Customer/
+Account cards render correctly through the new `Card`).
+
+DES-9 (elevation/motion, Phase 2), DES-10 (nav rework, Phase 3), DES-13
+(dark-mode tuning), and the loading-skeleton half of DES-14 remain open —
+carried forward as the next phases, not attempted in this pass.
+
+**Readiness assessment:** Phase 1 complete and verified. Still visually a
+generic-but-now-consistent scaffold — the elevation/motion and nav phases are
+what actually move it toward "top-tier product."
+
+## Audit #7 — Design Lead: pre-Phase-2 audit and first design pass (2026-09-23)
+
+Scope: a read-only audit of the Phase 1 result (rendered in light and dark mode against the
+seeded database, with contrast measured rather than eyeballed), then one implementation pass
+on its top findings: the neutral token and dark-mode foundation, shared presentation labels,
+and the ticket detail page. Navigation, Operations empty states, error/not-found/loading
+states and motion were explicitly out of scope. Rationale in DECISIONS.md ("Design
+foundation: semantic tokens, presentation labels, and a decision-first ticket page").
+
+### Design Lead review
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| DES-15 | Muted text failed WCAG AA: `text-zinc-500` had no dark variant (3.7-4.1:1 in dark mode) and several secondary labels used `text-zinc-400` on white (2.56:1). | P1 | **Fixed** — `--muted-foreground` token (zinc-500 light, zinc-400 dark) wired as `text-muted-foreground` and used for every muted role. Measured in the browser on the ticket page, Inbox and Operations, both schemes: 0 AA failures (the check flags a 2.56:1 control sample). |
+| DES-16 | Two sources of truth for the page background: `globals.css`'s unlayered `body` rule silently overrode `layout.tsx`'s `bg-white dark:bg-zinc-900`. In dark mode the nav (`zinc-950`) was indistinguishable from the page (`#0a0a0a`). Unused `--radius-*` tokens in `:root` overrode Tailwind's `rounded-md`/`rounded-lg`. | P1 | **Fixed** — `globals.css` is the only source; dead classes and colliding tokens removed; nav and context panels on the `surface` token. |
+| DES-17 | Ticket page showed the agent trace first and the decision last (below the fold on `suspicious-activity`). | P1 | **Fixed** — decision-first order: recommendation panel, draft reply, then "How this was decided" with the trace collapsed. E2E asserts the recommendation renders above the trace. |
+| DES-18 | Canonical values rendered raw to the operator (`refund_customer`, `trust_and_safety`, `account_security`, `past_due`, `in_app`). | P1 | **Fixed** — `src/lib/labels.ts`, the single source of presentation labels, used by Inbox, ticket page and Operations. Canonical values unchanged. E2E asserts no taxonomy identifier appears on the ticket page, trace included. |
+| DES-19 | The same sentence rendered twice (resolution summary and escalation reason). | P2 | **Fixed** — the escalation reason is shown only when its text differs from the summary. |
+| DES-20 | The orchestration (classification decides routing) was invisible; every step looked like one more card. | P1 | **Fixed** — a compact Classified → Routed → Resolved → Drafted strip from persisted run data only. |
+| DES-21 | Evidence and policy citations were the smallest, lowest-contrast text; citations were not links. | P2 | **Fixed** — evidence at body size; citations link to `/knowledge#policy-<slug>` when that policy exists. |
+| DES-22 | Every simulated step showed `model · 0ms · ~$0.00000`, which reads as broken. | P2 | **Fixed** — shown as "not called (scripted replay)" in quiet monospace; per-step provenance badges kept. |
+| DES-23 | In Demo Mode, AI Operations shows all zeros and an empty state ("run AI analysis on a ticket") that following it cannot fill, because demo runs are excluded from real metrics. | P1 | Open — next pass (TODO.md). Exclusion itself is correct and stays. |
+| DES-24 | No `not-found.tsx` or `error.tsx`: a bad ticket id or database error shows Next's default page. | P2 | Open — TODO.md. |
+| DES-25 | The Knowledge page lists policy titles only; a citation lands on an entry whose text is not viewable. | P2 | Open — TODO.md. |
+
+### Outcome
+
+Eight findings fixed (DES-15 to DES-22), three carried forward, plus DES-9 (motion half) and DES-10 (nav) from
+Audit #6. Provenance and Demo Mode semantics deliberately unchanged: SIMULATED notice,
+per-step badges, site banner, and simulated runs excluded from Operations metrics. Elevation is
+used on exactly one surface (the recommendation panel), confirmed by counting shadowed elements
+in the browser. A Knowledge arrival highlight (`:target`) was built and removed: Next's
+client-side navigation uses `pushState`, which does not update `:target`, so it only appeared on
+a full page load. Recorded agent evidence that quotes billing codes (`api_overage`,
+`insufficient_funds`) is recorded text and was left as-is.
+
+Verified: typecheck, lint, 417 unit tests (5 new, for the label contract), `AI_MODE=demo`
+build, and 14 E2E tests pass. E2E assertions that expected raw values were rewritten to the new
+user-facing contract; routing, idempotency, provenance and curated-only checks are unchanged.
+
+**Readiness assessment:** the ticket page now reads as an operations tool rather than a
+demo trace. Remaining visual gaps are navigation, the Operations Demo Mode state, error and
+loading states, and motion.

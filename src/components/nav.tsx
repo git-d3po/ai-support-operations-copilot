@@ -16,8 +16,8 @@ const NAV_ITEMS = [
  */
 export function Nav() {
   return (
-    <nav className="w-56 shrink-0 border-r border-zinc-200 bg-zinc-50 px-3 py-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="mb-4 px-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+    <nav className="w-56 shrink-0 border-r border-border bg-surface px-3 py-4">
+      <div className="mb-4 px-2 text-sm font-semibold text-foreground">
         AI Support Ops Copilot
       </div>
       <ul className="flex flex-col gap-0.5">

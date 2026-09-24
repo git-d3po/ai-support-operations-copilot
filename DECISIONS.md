@@ -2455,3 +2455,79 @@ constraint for one demo run per ticket; if the deployment filesystem persists, i
 at build instead of every start; if live evaluation results are shipped with the demo,
 they need their own import step (the seed clears results, and this guard would refuse a
 database that contains them).
+
+## 2026-09-23 — Design foundation: semantic tokens, presentation labels, and a decision-first ticket page
+
+**Context:** Two Design Lead audits (AUDIT.md, Audits #6 and #7) found the app functionally
+sound but visually a generic scaffold. Measured defects: muted text was a fixed `zinc-500`
+in both color schemes (3.7-4.1:1 in dark mode, below WCAG AA) and some secondary text was
+`zinc-400` on white (2.56:1); `<body>`'s color classes in `layout.tsx` were dead, overridden
+by `globals.css`; the nav was the same color as the page in dark mode; and unused `--radius-*`
+tokens in `:root` were silently overriding Tailwind's `rounded-md`/`rounded-lg` scale. The
+ticket page, the product's centerpiece, showed the agent trace first and the decision last,
+rendered canonical values raw (`refund_customer`, `trust_and_safety`), and often printed the
+same sentence twice (resolution summary and escalation reason share one value on several
+`resolve.ts` paths).
+
+**Decision made:** A presentation-only pass. No orchestration, routing, resolution,
+evaluation, policy, provider, Demo Mode or data change.
+- **Primitives, not a library:** `src/components/ui/` (`Card`, `Badge`, `SectionHeading`/
+  `Eyebrow`, `Stat`) over one semantic tone map (`tone.ts`: neutral, info = blue,
+  success, warning, danger; no purple or indigo). This answers "Deferring a UI component
+  library" for now: the app needs consistent panels and badges, not interactive widgets, so a
+  small in-house layer is enough.
+- **Neutral tokens, one source:** `globals.css` defines `background`, `foreground`, `surface`,
+  `border`, `muted-foreground` and elevation for both schemes and wires them into Tailwind via
+  `@theme inline` (`bg-surface`, `border-border`, `text-muted-foreground`, and a dark-aware
+  `shadow-sm`). Status colors stay in `tone.ts` only; the duplicate CSS variables and the
+  colliding radius tokens were removed. `surface` is reserved for context and decision panels
+  (sidebar, the ticket's customer/account aside, the recommendation), not every card.
+- **Elevation is reserved:** exactly one surface uses `shadow-sm`, the ticket's
+  recommendation panel. Ordinary cards separate by border. A global shadow would make a stack
+  of agent cards noisy, and shadows barely register in dark mode, where `surface` carries the
+  lift.
+- **Presentation labels are separate from canonical values:** `src/lib/labels.ts` maps every
+  canonical value an operator sees (status, priority, channel, action, team, intent, severity,
+  sentiment, policy decision, agent names, account/invoice fields, agent flags) to a label.
+  The canonical values stay the contract for the database, orchestrator, resolution rules and
+  evaluation scorer; nothing compares against a label, so a wording change can never change
+  behavior or a score. Maps over schema enums are typed `Record<Enum, string>`, so a new
+  taxonomy value without a label fails the typecheck; open vocabularies fall back to a
+  humanizer. Canonical values stay visible where comparing them is the point (the Evaluations
+  table's expected/actual columns, eval scenario keys).
+- **Decision-first ticket page:** the AI section reads recommendation (action, team,
+  severity, human review, confidence, one reason) → draft reply (marked "Not sent", scripted
+  disclaimer unchanged) → "How this was decided": a Classified → Routed → Resolved → Drafted
+  pipeline strip built only from persisted run data, with the full per-step agent trace in a
+  native `<details>`, closed by default. The escalation reason is shown only when it differs
+  from the resolution summary. A simulated step's machine detail says "not called" instead of
+  its recorded `0ms`/`$0`.
+- **Policy citations link to Knowledge:** `/knowledge#policy-<slug>`, using the existing unique
+  `Policy.slug`, and only when that policy exists; no new route.
+- **Provenance is not reduced:** the run-level SIMULATED notice, per-step "simulated
+  (provider)" badges, the site banner and the exclusion of simulated runs from Operations
+  metrics are unchanged, even where visually repetitive, because a run may mix providers.
+
+**Verification:** contrast measured in the browser (every visible text element, real
+foreground against its resolved background, WCAG AA thresholds) on the ticket page, Inbox and
+Operations in both schemes: 0 failures; the check itself flags a control sample at 2.56:1.
+Typecheck, lint, 417 unit tests, the `AI_MODE=demo` build and 14 E2E tests pass. E2E asserts
+the new contract: decision above the trace, labels (and no taxonomy identifier) on the page,
+the draft marked not sent, the trace collapsed by default, and a working policy link.
+
+**Why not the alternatives:** *Adopt shadcn/ui now* adds a dependency and a theme system for
+components the app does not have. *Label with ad hoc string replacement per page* would drift
+and could not be checked for completeness. *Rename canonical values to read well* would touch
+the schema, prompts, recorded demo responses and evaluation expectations for a wording
+change. *Shadows on every card* would make the decision panel stop standing out.
+
+**Not done / limits:** a Knowledge "arrival" highlight was built and removed: Next's
+client-side navigation uses `pushState`, which does not update `:target`, so it only showed on
+a full page load (it needs a small client-side hash listener). Some recorded agent evidence
+quotes billing reason codes verbatim (`api_overage`, `insufficient_funds`); that is recorded
+text, left as-is. Navigation, the Operations Demo Mode empty state, `not-found`/`error` pages,
+loading states and motion are separate passes (TODO.md).
+
+**When we'd reconsider:** if interactive components are needed (menus, dialogs, comboboxes),
+revisit a component library; if a canonical value's wording must change for product reasons,
+change it deliberately across schema, prompts, recordings and evaluation, never via a label.

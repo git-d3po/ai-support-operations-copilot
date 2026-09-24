@@ -1,26 +1,74 @@
 @import "tailwindcss";
 
+/*
+ * Neutral design tokens: the one source of truth for the page background,
+ * text, surfaces, borders, muted text and elevation, in both color schemes.
+ * They are wired into Tailwind below (`@theme inline`), so components use
+ * `bg-surface`, `border-border`, `text-muted-foreground` and `shadow-sm`
+ * instead of per-element light/dark pairs.
+ *
+ * Semantic status colors (neutral / info / success / warning / danger) are
+ * NOT duplicated here: they live in src/components/ui/tone.ts, consumed by
+ * `Badge` and `Card`. No purple or indigo anywhere (AUDIT.md, Audit #6, DES-8).
+ *
+ * Surface hierarchy (lowest to highest): background -> surface. `surface` is
+ * for context and decision panels (the sidebar, the ticket's customer/account
+ * aside, the recommendation panel), not every card: structural cards stay on
+ * the background and are separated by `border` alone.
+ *
+ * Measured contrast (WCAG AA needs 4.5:1 for text):
+ *   muted-foreground on background: light 4.83:1, dark 7.72:1
+ *   muted-foreground on surface:    light 4.63:1, dark 6.91:1
+ * (Not on zinc-100, e.g. a neutral badge fill: 4.40:1. Badges use their own
+ * darker text; see tone.ts.)
+ * The light value is zinc-500 and the dark value zinc-400. Before this, muted
+ * text was a fixed `zinc-500` in both schemes (3.7-4.1:1 in dark) and some
+ * secondary text used `zinc-400` on white (2.56:1).
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
+  --surface: #fafafa; /* zinc-50 */
+  --border: #e4e4e7; /* zinc-200 */
+  --muted-foreground: #71717a; /* zinc-500 */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Elevation is reserved for the one decision surface on the ticket page;
+   * ordinary cards use borders. Exposed as Tailwind's `shadow-sm`/`shadow-md`. */
+  --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --elevation-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --surface: #18181b; /* zinc-900 */
+    --border: #27272a; /* zinc-800 */
+    --muted-foreground: #a1a1aa; /* zinc-400 */
+
+    /* Shadows barely register on a near-black page; in dark mode a raised
+     * surface reads through its lighter `surface` fill instead. */
+    --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --elevation-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
   }
 }
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* The page's background and text come from here only; <body> in layout.tsx
+ * sets layout, not color. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }

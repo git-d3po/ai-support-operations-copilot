@@ -19,10 +19,23 @@ import { expect, test, type Page } from "@playwright/test";
  */
 test.describe.configure({ mode: "serial" });
 
+/**
+ * Canonical taxonomy values the ticket page must show through
+ * src/lib/labels.ts, never raw. (Agent-authored evidence prose may quote a data
+ * code such as a charge reason; that is recorded text, not a label, so this
+ * list names the identifiers the UI itself renders.)
+ */
+const RAW_TAXONOMY_IDENTIFIER =
+  /\b(?:refund_customer|reply_and_close|reply_and_monitor|auto_resolve|deny_request|trust_and_safety|billing_ops|senior_support|account_security|duplicate_charge|duplicate_charge_confirmed|requires_escalation|requires_review)\b/;
+
 async function openTicket(page: Page, subject: string) {
   await page.goto("/inbox");
   await page.getByRole("link", { name: subject }).click();
   await expect(page).toHaveURL(/\/tickets\//);
+}
+
+async function expandAgentTrace(page: Page, steps: number) {
+  await page.getByText(`Agent trace (${steps} steps)`).click();
 }
 
 test("running demo analysis on the duplicate-billing ticket produces a persisted, simulated result", async ({ page }) => {
@@ -39,8 +52,35 @@ test("running demo analysis on the duplicate-billing ticket produces a persisted
   // The result says plainly that it is a simulated demo replay, not a model.
   await expect(page.getByText("SIMULATED RUN", { exact: false })).toBeVisible();
   await expect(page.getByText(/demo replay of scripted responses; no model was called/)).toBeVisible();
+
+  // Decision first: the recommendation is visible without opening anything, in plain labels.
+  const recommendation = page.getByRole("region", { name: "Recommendation" });
+  await expect(recommendation).toBeVisible();
+  await expect(recommendation.getByText("Refund customer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Escalation")).toHaveCount(0);
+
+  // The operator's deliverable follows, and is honestly a draft: nothing was sent or executed.
+  const draft = page.getByRole("region", { name: "Draft reply" });
+  await expect(draft).toBeVisible();
+  await expect(draft.getByText("Not sent", { exact: true })).toBeVisible();
+  await expect(draft.getByText(/refunded it in full/i)).toBeVisible();
   // Nothing was actually done: a scripted "Refund processed" must not read as a real payment operation.
   await expect(page.getByText(/no refund, email, payment, account change, or other external action was actually executed/)).toBeVisible();
+
+  // The decision is shown above the reasoning that produced it.
+  const traceToggle = page.getByText("Agent trace (4 steps)");
+  const recommendationBox = await recommendation.boundingBox();
+  const traceBox = await traceToggle.boundingBox();
+  expect(recommendationBox!.y).toBeLessThan(traceBox!.y);
+
+  // Dynamic selection is visible without opening the trace: exactly Billing and Policy were routed to.
+  const pipeline = page.getByRole("list", { name: "Decision pipeline" });
+  await expect(pipeline.getByText("Billing, Policy", { exact: true })).toBeVisible();
+
+  // The full agent trace is collapsed by default, then opens to the per-step detail.
+  await expect(page.getByText("Billing Agent")).toBeHidden();
+  await expandAgentTrace(page, 4);
+  // Provenance stays per step, not only per run.
   await expect(page.getByText("simulated (demo)").first()).toBeVisible();
 
   // Dynamic selection: classification plus exactly billing, policy and response.
@@ -52,28 +92,30 @@ test("running demo analysis on the duplicate-billing ticket produces a persisted
   await expect(page.getByText("Risk / Escalation Agent")).toHaveCount(0);
 
   await expect(page.getByText(/confirmed.*duplicate/i).first()).toBeVisible();
-  await expect(page.getByText("Duplicate Charge Policy").first()).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "Resolution" })).toBeVisible();
-  await expect(page.getByText("refund_customer")).toBeVisible();
-  await expect(page.getByText("Escalation")).toHaveCount(0);
+  // No raw taxonomy identifier anywhere on the page, including the opened trace.
+  await expect(page.getByText(RAW_TAXONOMY_IDENTIFIER)).toHaveCount(0);
 
-  await expect(page.getByRole("heading", { name: "Proposed response" })).toBeVisible();
-  await expect(page.getByText(/refunded it in full/i)).toBeVisible();
+  // The policy citation is a real link to that policy's Knowledge entry.
+  const citation = page.getByRole("link", { name: "Duplicate Charge Policy" });
+  await expect(citation).toHaveAttribute("href", "/knowledge#policy-duplicate-charge-policy");
+  await citation.click();
+  await expect(page).toHaveURL(/\/knowledge#policy-duplicate-charge-policy$/);
+  await expect(page.locator("#policy-duplicate-charge-policy")).toBeInViewport();
 });
 
 test("running it again is idempotent: the same result, and still exactly one demo run", async ({ page }) => {
   await openTicket(page, "Charged twice this billing cycle");
-  await expect(page.getByText("Agents invoked (4)")).toBeVisible();
+  await expect(page.getByText("Agent trace (4 steps)")).toBeVisible();
 
   const button = page.getByRole("button", { name: "Run demo analysis again" });
   await button.click();
   await expect(button).toBeEnabled({ timeout: 15_000 }); // the action resolved
 
   await page.reload();
-  await expect(page.getByText("Agents invoked (4)")).toBeVisible(); // not 8: no second run was created
+  await expect(page.getByText("Agent trace (4 steps)")).toBeVisible(); // not 8: no second run was created
   await expect(page.getByText("SIMULATED RUN", { exact: false })).toHaveCount(1);
-  await expect(page.getByText("refund_customer")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recommendation" }).getByText("Refund customer", { exact: true })).toBeVisible();
 
   await page.goto("/operations");
   await expect(page.getByText(/^1 additional simulated run\(s\) exist \(Demo Mode scripted replays or fixture runs\)/)).toBeVisible();
@@ -94,12 +136,24 @@ test("a second, different scenario works: suspicious-activity routes to Risk and
   await expect(page.getByRole("button", { name: "Run demo analysis again" })).toBeVisible({ timeout: 15_000 });
 
   await expect(page.getByText("SIMULATED RUN", { exact: false })).toBeVisible();
+
+  // The decision, visible without opening the trace: escalate to Trust & Safety, critical, human review.
+  const recommendation = page.getByRole("region", { name: "Recommendation" });
+  await expect(recommendation.getByText("Escalate to Trust & Safety", { exact: true })).toBeVisible();
+  await expect(recommendation.getByText("Trust & Safety", { exact: true })).toBeVisible();
+  await expect(recommendation.getByText("Critical", { exact: true })).toBeVisible();
+  await expect(recommendation.getByText("Human review required", { exact: true })).toBeVisible();
+
+  // Routed to Risk only, visible in the pipeline and in the opened trace.
+  await expect(page.getByRole("list", { name: "Decision pipeline" }).getByText("Risk", { exact: true })).toBeVisible();
+  await expandAgentTrace(page, 3);
   await expect(page.getByText("Risk / Escalation Agent")).toBeVisible();
-  await expect(page.getByText(/team: trust_and_safety/)).toBeVisible();
   await expect(page.getByText("Billing Agent")).toHaveCount(0);
+
   // Not the duplicate-billing answer: the recordings are per-ticket.
-  await expect(page.getByText("refund_customer")).toHaveCount(0);
+  await expect(page.getByText("Refund customer", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/refunded it in full/i)).toHaveCount(0);
+  await expect(page.getByText(RAW_TAXONOMY_IDENTIFIER)).toHaveCount(0);
 });
 
 test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {

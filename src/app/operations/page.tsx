@@ -1,15 +1,10 @@
 import { db } from "@/lib/db";
+import { Card } from "@/components/ui/Card";
+import { SectionHeading } from "@/components/ui/SectionHeading";
+import { Stat } from "@/components/ui/Stat";
+import { labelAgent, labelPriority, labelTicketStatus } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
-
-const AGENT_LABEL: Record<string, string> = {
-  classifier: "Classification",
-  billing: "Billing Agent",
-  policy: "Policy Agent",
-  technical: "Technical Support Agent",
-  risk: "Risk / Escalation Agent",
-  response: "Response Agent",
-};
 
 export default async function OperationsPage() {
   const [statusCounts, priorityCounts, allRuns, simulatedRunCount] = await Promise.all([
@@ -54,14 +49,14 @@ export default async function OperationsPage() {
   return (
     <div className="p-6">
       <h1 className="text-lg font-semibold">AI Operations</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         Every number below is computed from live orchestration data — nothing here is a mockup. This
         is <strong>live/demo activity</strong>, not evaluation performance; see the Evaluations page for
         scored accuracy against known-correct scenarios (see DECISIONS.md, &ldquo;Why live/demo metrics
         are separated from evaluation metrics&rdquo;).
       </p>
       {simulatedRunCount > 0 && (
-        <p className="mt-1 text-xs text-purple-700 dark:text-purple-400">
+        <p className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-400">
           {simulatedRunCount} additional simulated run(s) exist (Demo Mode scripted replays or
           fixture runs) and are intentionally excluded from every metric below — see the
           Evaluations page.
@@ -82,39 +77,39 @@ export default async function OperationsPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-6">
-        <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">Ticket volume by status</h2>
+        <Card padding="lg">
+          <SectionHeading>Ticket volume by status</SectionHeading>
           <ul className="mt-2 text-sm">
             {statusCounts.map((row) => (
               <li key={row.status} className="flex justify-between border-b border-zinc-100 py-1 dark:border-zinc-900">
-                <span>{row.status}</span>
+                <span>{labelTicketStatus(row.status)}</span>
                 <span>{row._count}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
 
-        <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">Ticket volume by priority</h2>
+        <Card padding="lg">
+          <SectionHeading>Ticket volume by priority</SectionHeading>
           <ul className="mt-2 text-sm">
             {priorityCounts.map((row) => (
               <li key={row.priority} className="flex justify-between border-b border-zinc-100 py-1 dark:border-zinc-900">
-                <span>{row.priority}</span>
+                <span>{labelPriority(row.priority)}</span>
                 <span>{row._count}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       </div>
 
-      <div className="mt-6 rounded border border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="text-sm font-semibold">Usage by pipeline step</h2>
+      <Card padding="lg" className="mt-6">
+        <SectionHeading>Usage by pipeline step</SectionHeading>
         {perAgentStats.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No agent invocations recorded yet — run AI analysis on a ticket.</p>
+          <p className="mt-2 text-sm text-muted-foreground">No agent invocations recorded yet — run AI analysis on a ticket.</p>
         ) : (
           <table className="mt-2 w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800">
+              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-1 pr-4">Step</th>
                 <th className="py-1 pr-4">Invocations</th>
                 <th className="py-1 pr-4">Avg latency</th>
@@ -125,7 +120,7 @@ export default async function OperationsPage() {
             <tbody>
               {perAgentStats.map((stat) => (
                 <tr key={stat.key} className="border-b border-zinc-100 dark:border-zinc-900">
-                  <td className="py-1 pr-4">{AGENT_LABEL[stat.key] ?? stat.key}</td>
+                  <td className="py-1 pr-4">{labelAgent(stat.key)}</td>
                   <td className="py-1 pr-4">{stat.count}</td>
                   <td className="py-1 pr-4">{stat.avgLatencyMs != null ? `${Math.round(stat.avgLatencyMs)}ms` : "—"}</td>
                   <td className="py-1 pr-4">${stat.totalCostUsd.toFixed(5)}</td>
@@ -135,22 +130,13 @@ export default async function OperationsPage() {
             </tbody>
           </table>
         )}
-      </div>
+      </Card>
 
-      <div className="mt-6 rounded border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+      <Card dashed padding="lg" className="mt-6 text-sm text-muted-foreground">
         Estimated cost is derived from each model&apos;s configured per-token pricing
         (src/lib/orchestrator/modelRouting.ts) applied to actual token usage — it is an estimate for
         operational visibility, not a real billing statement.
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-      <p className="text-xs uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
+      </Card>
     </div>
   );
 }

@@ -36,8 +36,12 @@ test("opening a curated ticket shows the customer, conversation, and account con
   await page.goto("/inbox");
   await page.getByRole("link", { name: /Refund request — upgraded by mistake/i }).click();
   await expect(page).toHaveURL(/\/tickets\//);
-  await expect(page.getByText("Sam Okafor", { exact: true })).toBeVisible();
-  await expect(page.getByText("Vertexcraft", { exact: true })).toBeVisible();
+  // The customer/account context panel (the aside). Scoped to it because the
+  // customer's name also appears as the author of their message.
+  const context = page.getByRole("complementary");
+  await expect(context.getByText("Sam Okafor", { exact: true })).toBeVisible();
+  await expect(context.getByText("Vertexcraft", { exact: true })).toBeVisible();
+  await expect(context.getByRole("heading", { name: "Account" })).toBeVisible();
   await expect(page.getByText(/refund/i).first()).toBeVisible();
   await expect(page.getByText("No AI analysis has been run on this ticket yet.")).toBeVisible();
 });

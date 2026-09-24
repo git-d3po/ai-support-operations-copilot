@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Card } from "@/components/ui/Card";
 import { runAnalysisAction } from "./actions";
 
 /**
@@ -47,11 +48,11 @@ export function RunAnalysisButton({
       >
         {isPending ? "Running…" : `${demoMode ? "Run demo analysis" : "Run AI analysis"}${hasRunBefore ? " again" : ""}`}
       </button>
-      {disabledReason && <p className="mt-2 max-w-md text-xs text-zinc-500">{disabledReason}</p>}
+      {disabledReason && <p className="mt-2 max-w-md text-xs text-muted-foreground">{disabledReason}</p>}
       {error && (
-        <p className="mt-2 max-w-md rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+        <Card tone="danger" padding="sm" className="mt-2 max-w-md text-sm">
           Analysis failed: {error}
-        </p>
+        </Card>
       )}
     </div>
   );
