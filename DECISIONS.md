@@ -2578,3 +2578,46 @@ under keyboard Tab, main content left edge constant at 224px.
 **When we'd reconsider:** add icons if the navigation grows to where scanning labels becomes
 slow, choosing one library with one stroke weight; move tickets under `/inbox` only if the
 Inbox gains its own nested views (filters, queues) that tickets should inherit.
+
+## 2026-09-23 — AI Operations in Demo Mode: explain the exclusion, never fill the gap
+
+**Context:** AI Operations' run metrics count real-model runs only: the page filters out
+`isSimulated` runs before computing runs, failures, escalation and containment rates,
+invocations, invocation failure rate, estimated cost and usage by pipeline step (ticket volume
+reads the `Ticket` table and is unaffected). In the public Demo Mode deployment every run is
+simulated, so a visitor saw zeros, dashes and `$0.0000` with the instruction "run AI analysis on
+a ticket", which in Demo Mode can never fill the page (AUDIT.md, DES-23). Two lines had also
+become inaccurate: the subtitle called the data "live/demo activity" (wording from "Why
+live/demo metrics are separated from evaluation metrics", written before Demo Mode existed,
+where "demo" meant in-app traffic), and the simulated-run note pointed to the Evaluations page,
+where Demo Mode replays never appear.
+
+**Decision made:** Demo Mode explains why simulated activity is excluded from operational
+metrics; it never presents simulated activity as operational activity and never fills the page
+with invented numbers. No query, filter, metric or data change.
+- **Three states** (`src/lib/operationsState.ts`, unit-tested): Demo Mode with no real-model
+  runs shows one explanation; real-model runs in either mode show the normal dashboard; live
+  mode with nothing run yet shows no Demo Mode explanation, because Demo Mode is not the reason.
+- **One explanation, in the existing vocabulary** ("Demo Mode", "scripted replays", "simulated
+  runs", "real model"): why the run metrics are empty, how many simulated runs were excluded,
+  and a link to the Inbox, the existing place where a demo analysis can be run. The site banner
+  and per-run provenance are unchanged; no badge is repeated.
+- **Zero versus unavailable, unchanged:** counts stay `0` (zero qualifying runs is a true count),
+  rates stay `—` (undefined with nothing to divide by) and cost stays `$0.0000` (no real model
+  spend). These were already truthful, so the explanation contextualizes them instead of
+  replacing them.
+- **Copy corrected:** the subtitle now says the run metrics count real-model runs only, and the
+  simulated-run note no longer points to Evaluations.
+
+**Why not the alternatives:** *Count simulated runs in Demo Mode* makes scripted replays look
+like operational activity and breaks the provenance rule. *Hide the metrics in Demo Mode* hides
+a true fact (nothing real has run) and makes the page stop reading as an operations dashboard.
+*Show `—` for every zero* would claim counts are unknown when they are known to be zero.
+
+**Verification:** 428 unit tests (4 new, all three states) and 15 E2E tests: the demo run is
+excluded (the run metric reads a literal `0`), the explanation names Demo Mode, the excluded
+count stays exact across idempotent replays, and the link opens the Inbox. The E2E suite runs in
+Demo Mode only, so the live-mode states were checked in the browser without creating data:
+live mode against the seeded database (no explanation, since Demo Mode is not the reason) and a
+scratch copy of the evaluation database, which holds real-model runs (normal dashboard in both
+modes). The original evaluation databases were checksummed before and after and are unchanged.

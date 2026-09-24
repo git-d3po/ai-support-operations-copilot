@@ -118,16 +118,29 @@ test("running it again is idempotent: the same result, and still exactly one dem
   await expect(page.getByRole("region", { name: "Recommendation" }).getByText("Refund customer", { exact: true })).toBeVisible();
 
   await page.goto("/operations");
-  await expect(page.getByText(/^1 additional simulated run\(s\) exist \(Demo Mode scripted replays or fixture runs\)/)).toBeVisible();
+  await expect(page.getByText(/^1 simulated run is recorded in this deployment/)).toBeVisible(); // still one
 });
 
-test("AI Operations excludes the demo run from real metrics", async ({ page }) => {
+test("AI Operations excludes the demo run from real metrics, and says why", async ({ page }) => {
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "AI Operations" })).toBeVisible();
-  await expect(page.getByText("Orchestration runs")).toBeVisible();
-  await expect(page.getByText(/additional simulated run\(s\) exist \(Demo Mode scripted replays or fixture runs\)/)).toBeVisible();
-  // The demo run's agent invocations are not counted as real activity.
-  await expect(page.getByText("No agent invocations recorded yet")).toBeVisible();
+
+  // The demo run is not counted: the run metric is a true zero, not hidden or inflated.
+  await expect(page.getByText("Orchestration runs", { exact: true }).locator("xpath=following-sibling::p")).toHaveText("0");
+  await expect(page.getByText("No real-model invocations to show. Demo analyses are not counted here.")).toBeVisible();
+
+  // One explanation, naming Demo Mode as the reason, with the count it excluded.
+  const notice = page.getByRole("region", { name: "Run metrics are empty in Demo Mode" });
+  await expect(notice).toBeVisible();
+  await expect(notice.getByText(/In Demo Mode, analyses are scripted replays and no model is called/)).toBeVisible();
+  await expect(notice.getByText(/^1 simulated run is recorded in this deployment and excluded from every metric/)).toBeVisible();
+
+  // It points to where the system can actually be seen working: an existing route.
+  const explore = notice.getByRole("link", { name: "Open the Inbox to run a demo analysis" });
+  await expect(explore).toHaveAttribute("href", "/inbox");
+  await explore.click();
+  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 });
 
 test("a second, different scenario works: suspicious-activity routes to Risk and escalates to Trust & Safety", async ({ page }) => {
@@ -169,5 +182,5 @@ test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {
 
   // Nothing was created: only the two curated demo runs from the tests above exist.
   await page.goto("/operations");
-  await expect(page.getByText(/^2 additional simulated run\(s\) exist \(Demo Mode scripted replays or fixture runs\)/)).toBeVisible();
+  await expect(page.getByText(/^2 simulated runs are recorded in this deployment/)).toBeVisible();
 });

@@ -61,10 +61,9 @@ DECISIONS.md. This is what's left.
   purple/indigo removal; neutral tokens with AA-passing muted text and a
   dark-mode surface hierarchy; shared presentation labels
   (`src/lib/labels.ts`); the decision-first ticket page; grouped navigation
-  with a route-aware active state (AUDIT.md DES-10). Next passes, in order:
-  - AI Operations in Demo Mode: an honest empty state (its "run AI analysis"
-    hint cannot fill metrics that deliberately exclude demo runs), keeping
-    simulated runs out of real metrics (AUDIT.md DES-23).
+  with a route-aware active state (AUDIT.md DES-10); an AI Operations page
+  that explains Demo Mode's empty run metrics (AUDIT.md DES-23). Next
+  passes, in order:
   - Root `not-found.tsx` and `error.tsx` (AUDIT.md DES-24).
   - Motion that communicates state: a spinner and `aria-busy` on "Run
     analysis", consistent `focus-visible` rings, `transition-colors`, and

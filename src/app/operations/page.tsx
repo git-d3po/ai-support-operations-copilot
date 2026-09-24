@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
+import { getAiMode } from "@/lib/ai/mode";
+import { describeSimulatedRuns, operationsDataState } from "@/lib/operationsState";
 import { Card } from "@/components/ui/Card";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { Stat } from "@/components/ui/Stat";
@@ -19,6 +22,10 @@ export default async function OperationsPage() {
   // inflate "real" activity numbers with scripted data. See DECISIONS.md ("Honestly recording
   // which provider actually served a call").
   const runs = allRuns.filter((r) => !r.isSimulated);
+
+  // Presentation only: which empty state (if any) to explain. It reads the same
+  // filtered count as the metrics and never changes what they count.
+  const state = operationsDataState(getAiMode(), runs.length);
 
   const completedRuns = runs.filter((r) => r.status === "completed");
   const failedRuns = runs.filter((r) => r.status === "failed");
@@ -50,16 +57,41 @@ export default async function OperationsPage() {
     <div className="p-6">
       <h1 className="text-lg font-semibold">AI Operations</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Every number below is computed from live orchestration data — nothing here is a mockup. This
-        is <strong>live/demo activity</strong>, not evaluation performance; see the Evaluations page for
-        scored accuracy against known-correct scenarios (see DECISIONS.md, &ldquo;Why live/demo metrics
-        are separated from evaluation metrics&rdquo;).
+        Computed from recorded orchestration data — nothing here is a mockup. Run, invocation and cost
+        metrics count real-model runs only; ticket volume counts every ticket. This is operational
+        activity, not evaluation accuracy: see the Evaluations page for scored results against
+        known-correct scenarios (see DECISIONS.md, &ldquo;Why live/demo metrics are separated from
+        evaluation metrics&rdquo;).
       </p>
-      {simulatedRunCount > 0 && (
+
+      {state === "demo-no-real-runs" && (
+        <section aria-labelledby="demo-mode-metrics-heading" className="mt-4">
+          <Card surface padding="lg" className="text-sm">
+            <SectionHeading id="demo-mode-metrics-heading">Run metrics are empty in Demo Mode</SectionHeading>
+            <p className="mt-2 leading-relaxed text-zinc-700 dark:text-zinc-300">
+              In Demo Mode, analyses are scripted replays and no model is called. The run, invocation and
+              cost metrics below count real-model runs only, so simulated runs are left out rather than
+              reported as operational activity. Ticket volume is unaffected.
+            </p>
+            <p className="mt-2 text-muted-foreground">
+              {simulatedRunCount > 0
+                ? `${describeSimulatedRuns(simulatedRunCount)} recorded in this deployment and excluded from every metric on this page.`
+                : "No demo analyses have been run in this deployment yet."}
+            </p>
+            <p className="mt-3">
+              <Link href="/inbox" className="font-medium underline decoration-border underline-offset-2 hover:decoration-current">
+                Open the Inbox to run a demo analysis
+              </Link>
+              <span className="text-muted-foreground"> on a curated ticket (tagged &ldquo;eval:&rdquo;).</span>
+            </p>
+          </Card>
+        </section>
+      )}
+
+      {state !== "demo-no-real-runs" && simulatedRunCount > 0 && (
         <p className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-400">
-          {simulatedRunCount} additional simulated run(s) exist (Demo Mode scripted replays or
-          fixture runs) and are intentionally excluded from every metric below — see the
-          Evaluations page.
+          {describeSimulatedRuns(simulatedRunCount)} also recorded (Demo Mode scripted replays or fixture
+          runs) and excluded from every metric below.
         </p>
       )}
 
@@ -105,7 +137,11 @@ export default async function OperationsPage() {
       <Card padding="lg" className="mt-6">
         <SectionHeading>Usage by pipeline step</SectionHeading>
         {perAgentStats.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">No agent invocations recorded yet — run AI analysis on a ticket.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {state === "demo-no-real-runs"
+              ? "No real-model invocations to show. Demo analyses are not counted here."
+              : "No agent invocations recorded yet — run AI analysis on a ticket."}
+          </p>
         ) : (
           <table className="mt-2 w-full text-sm">
             <thead>

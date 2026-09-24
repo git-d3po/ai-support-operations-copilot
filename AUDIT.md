@@ -442,7 +442,7 @@ foundation: semantic tokens, presentation labels, and a decision-first ticket pa
 | DES-20 | The orchestration (classification decides routing) was invisible; every step looked like one more card. | P1 | **Fixed** — a compact Classified → Routed → Resolved → Drafted strip from persisted run data only. |
 | DES-21 | Evidence and policy citations were the smallest, lowest-contrast text; citations were not links. | P2 | **Fixed** — evidence at body size; citations link to `/knowledge#policy-<slug>` when that policy exists. |
 | DES-22 | Every simulated step showed `model · 0ms · ~$0.00000`, which reads as broken. | P2 | **Fixed** — shown as "not called (scripted replay)" in quiet monospace; per-step provenance badges kept. |
-| DES-23 | In Demo Mode, AI Operations shows all zeros and an empty state ("run AI analysis on a ticket") that following it cannot fill, because demo runs are excluded from real metrics. | P1 | Open — next pass (TODO.md). Exclusion itself is correct and stays. |
+| DES-23 | In Demo Mode, AI Operations shows all zeros and an empty state ("run AI analysis on a ticket") that following it cannot fill, because demo runs are excluded from real metrics. | P1 | **Fixed** (2026-09-23, Operations Demo Mode pass) — one explanation in Demo Mode when no real-model runs exist, naming Demo Mode as the reason, with the excluded count and a link to the Inbox. Exclusion and metric values unchanged. See DECISIONS.md ("AI Operations in Demo Mode"). |
 | DES-24 | No `not-found.tsx` or `error.tsx`: a bad ticket id or database error shows Next's default page. | P2 | Open — TODO.md. |
 | DES-25 | The Knowledge page lists policy titles only; a citation lands on an entry whose text is not viewable. | P2 | Open — TODO.md. |
 
