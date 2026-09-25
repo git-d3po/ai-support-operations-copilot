@@ -261,9 +261,45 @@ specific `OrchestrationRun` that was scored.
   `eval.db`: 10 non-simulated results from 2026-09-20, one per scenario
   seeded at the time, 9 passed; `failed-payment` failed (0.57), which led
   to the `failed_payment` resolution-precedence change (DECISIONS.md,
-  2026-09-20). That change and the later `out-of-window-refund` scenario
-  have not been measured live since. The public Demo Mode deployment does
-  not include these results, so its Evaluations page shows "Not run".
+  2026-09-20). When this was written, that change and the later
+  `out-of-window-refund` scenario had not been measured live; both were in
+  the 2026-09-24 run below. The public Demo Mode deployment does not include
+  these results, so its Evaluations page shows "Not run".
+- **Current live baseline: 2026-09-24** (DECISIONS.md, "Live evaluation
+  refresh on a separate database"). One run of all 11 scenarios against the
+  real Anthropic provider (`claude-haiku-4-5-20251001` and `claude-sonnet-5`,
+  per `modelRouting.ts`), written to its own database, the local, gitignored
+  `eval-2026-09-24.db` (`EVAL_DATABASE_URL=file:./eval-2026-09-24.db npm run
+  eval`, after migrating and seeding that file as `db:eval:setup` does), so
+  the 2026-09-20 results in `eval.db` were preserved, not reset. 11/11 scored,
+  11 passed, no simulated runs, no scenario re-run; estimated cost ~$0.21.
+  The `failed_payment` precedence change was confirmed live: the classifier
+  again added Technical, Technical again flagged `auto_resolvable`, and the
+  outcome was `reply_and_monitor` (0.57 → 0.86). `out-of-window-refund` was
+  measured live for the first time: Policy returned `requires_review`, which
+  escalated to Billing Ops (1.00).
+
+  11/11 is the scorer's result against the 0.85 threshold. It does not mean
+  every agent output was correct, and it is a single live measurement, so
+  model variance is still visible. Four scenarios passed with notable
+  observations, none of them fixed by passing:
+  - `prohibited-refund` (0.94): the Billing agent emitted a malformed
+    `policyReferences` entry twice and was degraded to `agent_failed`; the
+    outcome rested on the Policy agent's denial, and the score stayed above
+    the threshold. The run exposed an application-side defect: Billing
+    validated a citation field it never uses, so malformed citation metadata
+    alone discarded its finding. Fixed afterwards in `29fd3c0` (DECISIONS.md,
+    "Billing and Technical do not parse policy citations"); the recorded
+    result is unchanged, and the fix has not been measured live.
+  - `multi-domain` (0.88): intent `duplicate_charge`, expected
+    `billing_question`: the documented specification mismatch (see "Audit of
+    the curated scenarios against the rule"), unresolved.
+  - `technical-escalation` (0.86): Risk was not routed because the classifier
+    returned sentiment `frustrated`; whether Risk is required here is an open
+    specification question.
+  - `failed-payment` (0.86): routing scored incorrect because the classifier's
+    domains included Technical (as on one earlier live run, not the first):
+    classifier variance, with an open question about the expected agents.
 - **`npm run test:e2e`'s `runAnalysis.spec.ts` is not a substitute for
   this.** It proves the pipeline's wiring, persistence, and UI rendering
   work end to end using a deterministic fixture provider tuned to one

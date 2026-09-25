@@ -14,25 +14,30 @@ DECISIONS.md. This is what's left.
   run". Whether to show a dated, clearly labelled snapshot of the real results is a product
   decision; nothing is shown that was not measured.
 
-- **Run a real evaluation pass.** `npm run eval` exists, is tested for
-  safety, and refuses to run without a real `ANTHROPIC_API_KEY` (see
-  EVALUATION.md, DECISIONS.md). No key is configured in this environment,
-  and this project's standing rule is that a real model credential is
-  never used without being asked first. The Evaluations page will keep
-  honestly showing "not run" until the user provides a key and asks for
-  this to happen. **Audit #4 confirmed the system is engineering-ready**
-  for this — `npm run eval:dry-run` validated the full pipeline end to
-  end (9/10 correct scenarios passed, 1 deliberately-wrong scenario
-  correctly failed) against a deterministic fixture, so a real run should
-  need no further plumbing changes. **Audit #5 is a pre-flight audit done
-  specifically for the moment a real credential is about to be added** —
-  it re-verified credential handling, provider-selection gating, and
-  live/simulated labeling directly against the code (no issues found) and
-  computed what to expect from a real run: ~35 model calls and roughly
-  $0.10–$0.30 for all 10 scenarios (see EVALUATION.md, "Pre-flight:
-  expected call count and cost for a real run" — labeled an estimate, not
-  a measured figure). Still open, deliberately left to the user: whether
-  the first real run should be one smoke-test scenario or all 10 at once.
+- **Live evaluation: open questions from the 2026-09-24 baseline.** The first
+  real evaluation passes ran on 2026-09-19/20 (historical results preserved in
+  `eval.db`), and the current live baseline is a single run of all 11 scenarios
+  on 2026-09-24 in `eval-2026-09-24.db`: 11/11 scored and passed (EVALUATION.md,
+  "Current status"; DECISIONS.md, "Live evaluation refresh on a separate
+  database"). Passing did not settle these; items 1-3 are not implementation tasks
+  until decided:
+  1. **`multi-domain` expected intent.** Live runs return `duplicate_charge`, which
+     the documented primary-intent rule selects; the scenario expects
+     `billing_question`. Decide the expectation, or specify `billing_question`
+     differently (EVALUATION.md, "Audit of the curated scenarios against the rule").
+  2. **Risk for `technical-escalation`.** The scenario expects Risk, but Risk runs
+     only if the classifier reports angry/urgent sentiment or a risk domain; both
+     live runs said `frustrated`. Decide whether Risk is actually required.
+  3. **`failed-payment` expected agents.** It expects only `[billing]`, but live
+     classification sometimes includes Technical (two of the three recorded
+     classifications). Decide whether that expectation should stand.
+  4. **Billing `policyReferences` contract failure** (`prohibited-refund`,
+     2026-09-24): **resolved after the run.** The Billing agent emitted a malformed
+     entry twice and was degraded; since `29fd3c0`, Billing and Technical no longer
+     parse citations they never use, so this cannot degrade them (DECISIONS.md,
+     "Billing and Technical do not parse policy citations"). Not yet measured live.
+  Any further live run is a deliberate, paid, user-requested step (the standing
+  rule is unchanged), to a separate `eval-<run>.db` so earlier results are kept.
 
 ## AI Operations — polish, once there's more real usage data to show
 

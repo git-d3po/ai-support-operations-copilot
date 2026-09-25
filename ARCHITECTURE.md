@@ -375,8 +375,10 @@ See TODO.md for the full list. In one line: the full pipeline is now
 genuinely model-backed end to end and persisted. When this was written, the
 evaluation suite had not yet been *run* against a real provider (it requires
 `ANTHROPIC_API_KEY`, which, per project policy, is never used without being
-explicitly asked for first). A live baseline has since been recorded in the
-local `eval.db` (see EVALUATION.md, "Current status"); the public Demo Mode
-deployment does not include it, so its Evaluations page shows "Not run"
-rather than a fabricated score. UI visual polish, editable model routing
+explicitly asked for first). Live runs have since been made: the historical
+2026-09-20 results remain preserved in the local `eval.db`, and the current
+live baseline, a single run of all 11 scenarios on 2026-09-24, is stored
+separately in the local `eval-2026-09-24.db` (see EVALUATION.md, "Current
+status"). The public Demo Mode deployment includes neither, so its
+Evaluations page shows "Not run" rather than a fabricated score. UI visual polish, editable model routing
 from Settings, and Inbox filtering/pagination also remain deferred.

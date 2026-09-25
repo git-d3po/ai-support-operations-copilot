@@ -2836,6 +2836,69 @@ data being changed to match the recording, which would have bent the fixture to 
 and left the stored live result disagreeing with the seed. No behavior or evaluation expectation
 changed.
 
+## 2026-09-24 — Live evaluation refresh on a separate database
+
+**Context:** The only live baseline (`eval.db`, 2026-09-20: 10 scenarios, 9 passed,
+`failed-payment` 0.57) predated the `failed_payment` resolution-precedence change
+(`0a21ca4`) and the `out-of-window-refund` scenario (`1c6d03f`), so neither had been
+measured live. The user asked for a controlled live evaluation of the current
+repository (`0a12bb9`).
+
+**Decision made:** Run the existing command once against a new database rather than
+the canonical one: `eval-2026-09-24.db`, migrated and seeded exactly as
+`db:eval:setup` does, selected with `EVAL_DATABASE_URL` (the documented override;
+the `eval-<run>.db` naming the demo-deployment guards already refuse). Re-running
+`db:eval:setup` would have reset `eval.db` and destroyed the 2026-09-20 results, which
+are evidence. `eval.db` and `dev.db` were checksummed before and after and are
+unchanged; `eval.db` was also backed up first. `/eval-*.db` was added to `.gitignore`
+so a run's database cannot be committed by accident. The new file is retained
+separately; which live database is canonical going forward has not been decided.
+
+**Result:** The current suite has 11 scenarios. 11/11 scored, 11 passed, all against
+the real Anthropic provider (`claude-haiku-4-5-20251001`, `claude-sonnet-5`), no
+simulated runs, 39 agent calls (one failed after its retry), estimated cost ~$0.21.
+The run was executed once; no scenario was re-run, and no prompt, model setting,
+scoring rule, threshold, expectation, scenario, routing or resolution rule, or
+product code was changed to obtain it.
+- `failed-payment` 0.57 → 0.86: the classifier again added Technical, Technical again
+  flagged `auto_resolvable`, and rule 6b produced `reply_and_monitor`. The `0a21ca4`
+  fix is confirmed live on the input that failed before.
+- `out-of-window-refund` 1.00 on its first live measurement: Policy returned
+  `requires_review` on `refund-policy`, escalated to Billing Ops with human review.
+- `duplicate-billing` 1.00: the live Billing finding says "0 hours apart", matching the
+  stored timestamps.
+- `suspicious-activity` 1.00: the account-security invariant held (Trust & Safety,
+  human review, policy cited). Risk also recommended Trust & Safety, so this run did
+  not exercise the resolution-layer protection against a disagreeing Risk result.
+
+**What passing does not show:** 11/11 is the scorer's verdict at the 0.85 threshold,
+from a single live measurement; it does not mean every agent output was correct.
+Four observations remain, categorized rather than fixed:
+- **Output contract (see "Superseded in part" below):** on `prohibited-refund` (0.94)
+  the Billing agent returned a `policyReferences` entry without `slug`/`title` twice
+  and was degraded to `agent_failed`; the outcome rested on Policy's denial alone.
+- **Model variance (classifier domains), with an open expectation question:**
+  `failed-payment` routing scored incorrect because Technical ran.
+- **Specification decision, open:** `multi-domain` expects `billing_question`; the live
+  classifier returns `duplicate_charge`, which the documented primary-intent rule
+  selects.
+- **Specification decision, open:** `technical-escalation` expects Risk, which runs only
+  on angry/urgent sentiment or a risk domain; the classifier said `frustrated`.
+No new implementation defect was identified at the time. The three expectation
+questions and the contract failure are recorded in TODO.md and deliberately not
+decided here.
+
+**Superseded in part (later the same day):** the `prohibited-refund` observation was
+not only model variance. Billing validated `policyReferences`, a field it never uses
+and always discards, so a malformed citation alone degraded its finding: an
+application-side defect, fixed in `29fd3c0` (see "Billing and Technical do not parse
+policy citations" below). The recorded result is unchanged (0.94, passed, the denial
+resting on Policy against `0a12bb9`), and the fix has not been measured live.
+
+**Not done / limits:** One run only, so variance is observed, not measured. `npm run
+dev:eval` still reads `eval.db`; viewing the 2026-09-24 results needs a `DATABASE_URL`
+override until a canonical-database decision is made.
+
 ## 2026-09-24 — `failed_payment`: a degraded Billing finding escalates
 
 **Context:** A read-only forensic trace of the full pipeline (classifier → routing →
