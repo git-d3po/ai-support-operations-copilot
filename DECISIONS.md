@@ -2835,3 +2835,81 @@ corrected to match the data ("0 hours apart"; "on the same day" in its summary) 
 data being changed to match the recording, which would have bent the fixture to fit scripted text
 and left the stored live result disagreeing with the seed. No behavior or evaluation expectation
 changed.
+
+## 2026-09-24 — `failed_payment`: a degraded Billing finding escalates
+
+**Context:** A read-only forensic trace of the full pipeline (classifier → routing →
+specialists → structured parsing and retry → degradation → resolution), run through the
+real orchestrator with an in-memory mock provider, found a latent gap in the
+`failed_payment` ownership rule (see "`failed_payment` is Billing-owned at resolution").
+When Billing ran but degraded to `agent_failed` (`degradedAgentFinding`: confidence 0,
+no evidence) and Technical also ran, rule 6b did not apply (no payment-failed flag), so
+Technical's documentation-only flags decided: `auto_resolvable` gave `auto_resolve` and a
+known-issue workaround gave `reply_and_close`, both with no human review. Rule 10 ("an
+agent failed") sits below them and only applies when nothing above has decided. That is
+the outcome rule 6b exists to prevent: Technical never sees the invoice or payment state,
+so its flags cannot establish that a payment problem is resolved. Every ingredient had
+occurred live (Technical routed on 2 of 3 recorded `failed-payment` classifications; a
+Billing finding degraded on 2026-09-24), though never together. Elsewhere a degraded
+deciding specialist already fails safe: a failed classification, a degraded Policy and a
+degraded Risk all escalate.
+
+**Decision made:** Rule 6c in `resolveOutcome()`: for intent `failed_payment`, when a
+Billing finding is present and carries `agent_failed`, escalate for human review with
+exactly the outcome rule 10 already gives any agent failure (Senior Support, low
+severity; one shared builder, `agentFailureEscalation()`, so the two cannot drift). It
+sits after rule 6 (Technical `requires_escalation` still escalates to Engineering) and
+6b (a valid Billing finding still decides), and before rules 7-9. Everything above it
+(classification failure, account security, Risk, every Policy outcome) keeps precedence.
+
+**Deliberately not changed:** routing (Billing is still not forced to run for
+`failed_payment`); the case where Billing was not routed at all (Technical's
+`auto_resolvable` still decides; a separate routing and specification question); the
+meaning of `agent_failed` and rule 10's position; any other intent, including the mirror
+case (`technical_issue` with a degraded Technical, where Billing's flag still decides);
+the scorer, prompts, scenarios and expectations. No global "a degraded owner always
+escalates" rule was introduced: only `failed_payment` has a documented owner.
+
+**Verification:** A differential of `resolveOutcome()` before and after over 50,400
+combinations (10 intents × classification failed or not × 6 Billing states × 7
+Technical × 6 Policy × 5 Risk × both finding orders) changed exactly 8, all
+`failed_payment` with a degraded Billing finding, Technical `auto_resolvable` or
+known-issue, no Policy finding and Risk absent or not escalating: `auto_resolve` /
+`reply_and_close` became escalation with human review. Every other combination,
+including a degraded Billing finding on its own, is byte-identical. New tests cover the
+changed cases in either finding order, every higher-precedence rule, and pins for the
+unchanged cases; they fail against the previous `resolve.ts`.
+
+## 2026-09-24 — Billing and Technical do not parse policy citations
+
+**Context:** Billing and Technical are never shown a policy, and since "Enforcing, not
+just prompting for, grounded policy citations" (2026-09-18) any citation they emit is
+discarded and they store `policyReferences: []`; nothing downstream (resolution, UI,
+scorer) ever receives one. But both parsed with the shared `AgentFindingSchema`, which
+validates `policyReferences` as `{slug, title}` objects before the discard runs. So
+malformed citation metadata could reject an otherwise valid finding, cost a retry, and
+degrade it. On 2026-09-24 a live Billing finding degraded for exactly that reason, and a
+forensic reproduction showed Billing's correct `payment_failed_awaiting_customer_action`
+flag being lost with it.
+
+**Decision made:** Billing and Technical parse with `NonCitingAgentFindingSchema`
+(`AgentFindingSchema.omit({ policyReferences: true })`, in `schemas.ts`). Zod object
+schemas drop undeclared keys (verified on the installed Zod 4.6.5), so a citation the
+model emits, well-formed or malformed, is ignored, and both agents store
+`policyReferences: []` exactly as before. Every substantive field keeps its full
+validation: a malformed summary, evidence, confidence or flag list still fails, retries
+once and degrades.
+
+**Deliberately not changed:** `AgentFindingSchema` itself, and the Policy and Risk
+schemas that extend it and whose citations are used (grounded, displayed and scored);
+their citation validation and grounding are untouched. No generic malformed-field
+recovery was added. The stored finding shape, the UI, the scorer, the retry count and
+both agents' prompts are unchanged.
+
+**How the two decisions relate:** They are independent. Tolerant citations remove one
+cause of Billing degradation; they do not make degradation impossible (invalid JSON or
+an out-of-range substantive field still degrade it, and Technical summaries over 400
+characters did so live on 2026-09-19). Rule 6c makes the `failed_payment` outcome safe
+whatever the cause. An orchestrator test drives both: a Billing finding with a malformed
+citation now survives (one call, flag kept) and decides `reply_and_monitor`; a genuinely
+degraded one escalates instead of letting Technical auto-resolve.

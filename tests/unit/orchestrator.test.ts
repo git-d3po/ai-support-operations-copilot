@@ -449,4 +449,68 @@ describe("runOrchestration: failed_payment with both Billing and Technical runni
     expect(outcome.resolution.summary).toBe(BILLING_SUMMARY);
     expect(outcome.escalation).toBeNull();
   });
+
+  /**
+   * The two fixes together (DECISIONS.md, "Billing and Technical do not parse
+   * policy citations" and "failed_payment: a degraded Billing finding escalates").
+   * A live run saw Billing's finding degrade because of a malformed citation
+   * alone; on this ticket that would have let Technical's auto_resolvable decide.
+   */
+  function billingAnswerCounting(billing: Record<string, unknown>) {
+    let calls = 0;
+    const answers = {
+      ...responses({ summary: "Standard retry flow: failed charges are retried on days 1, 3 and 7.", flags: ["auto_resolvable"] }),
+      billing_agent_finding: () => {
+        calls++;
+        return JSON.stringify(billing);
+      },
+    };
+    return { answers, calls: () => calls };
+  }
+
+  it("a malformed Billing citation no longer degrades Billing, so its payment-failed finding still decides", async () => {
+    const billing = billingAnswerCounting({
+      agentKey: "billing",
+      summary: BILLING_SUMMARY,
+      evidence: ["Most recent failed charge: insufficient_funds"],
+      confidence: 0.95,
+      policyReferences: [{ policy: "none" }],
+      flags: ["payment_failed_awaiting_customer_action"],
+    });
+    registerProvider("anthropic", createTaskMockProvider(billing.answers));
+
+    const outcome = await run();
+
+    expect(outcome.agentsInvoked).toEqual(["billing", "technical", "response"]);
+    const billingFinding = outcome.agentResults.find((r) => r.finding.agentKey === "billing")!.finding;
+    expect(billingFinding.flags).toEqual(["payment_failed_awaiting_customer_action"]);
+    expect(billingFinding.policyReferences).toEqual([]);
+    expect(billing.calls()).toBe(1);
+    expect(outcome.agentResults.find((r) => r.finding.agentKey === "technical")!.finding.flags).toContain("auto_resolvable");
+    // Billing owns the outcome (rule 6b); Technical's auto_resolvable does not override it.
+    expect(outcome.resolution.action).toBe("reply_and_monitor");
+    expect(outcome.resolution.summary).toBe(BILLING_SUMMARY);
+    expect(outcome.escalation).toBeNull();
+  });
+
+  it("a Billing finding that genuinely degrades escalates for human review instead of letting Technical auto-resolve", async () => {
+    const billing = billingAnswerCounting({
+      agentKey: "billing",
+      summary: BILLING_SUMMARY,
+      evidence: ["Most recent failed charge: insufficient_funds"],
+      confidence: 7, // a substantive field out of range: a real schema failure, on both attempts
+      flags: ["payment_failed_awaiting_customer_action"],
+    });
+    registerProvider("anthropic", createTaskMockProvider(billing.answers));
+
+    const outcome = await run();
+
+    expect(outcome.agentsInvoked).toEqual(["billing", "technical", "response"]);
+    expect(outcome.agentResults.find((r) => r.finding.agentKey === "billing")!.finding.flags).toEqual(["agent_failed"]);
+    expect(billing.calls()).toBe(2);
+    expect(outcome.agentResults.find((r) => r.finding.agentKey === "technical")!.finding.flags).toContain("auto_resolvable");
+    expect(outcome.resolution.action).toBe("escalate");
+    expect(outcome.resolution.requiresHumanReview).toBe(true);
+    expect(outcome.escalation?.targetTeam).toBe("senior_support");
+  });
 });

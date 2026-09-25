@@ -1,5 +1,5 @@
-import { AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
-import { detectDuplicateCharges, filterGroundedPolicyReferences, mostRecentFailedCharge } from "../evidence";
+import { KNOWN_AGENT_FLAGS, NonCitingAgentFindingSchema, type AgentFinding } from "@/lib/ai/schemas";
+import { detectDuplicateCharges, mostRecentFailedCharge } from "../evidence";
 import {
   formatInvoices,
   formatTransactions,
@@ -66,15 +66,16 @@ export const billingAgent: SpecialistAgent = {
   async run(context): Promise<AgentResult> {
     const { data, parseError, metrics } = await runStructuredStep(
       "billing",
-      AgentFindingSchema,
+      NonCitingAgentFindingSchema,
       (retryContext) => buildRequest(context, retryContext),
     );
-    // Billing is never shown any policy documents (see buildRequest above),
-    // so it has nothing legitimate to cite — strip any citation anyway in
-    // case the model invents one. Same enforcement as Policy/Risk agents;
-    // see DECISIONS.md ("Enforcing, not just prompting for, grounded
-    // policy citations").
-    const finding = data ? { ...data, policyReferences: filterGroundedPolicyReferences(data.policyReferences, []) } : degradedAgentFinding("billing", parseError!);
+    // Billing is never shown any policy documents (see buildRequest above), so it
+    // has nothing legitimate to cite: its parsing contract does not include
+    // citations at all (NonCitingAgentFindingSchema), and a citation the model
+    // emits anyway, well-formed or not, is dropped rather than failing the
+    // finding. It always stores no citations, as before; see DECISIONS.md
+    // ("Billing and Technical do not parse policy citations").
+    const finding: AgentFinding = data ? { ...data, policyReferences: [] } : degradedAgentFinding("billing", parseError!);
     return {
       finding,
       metrics,

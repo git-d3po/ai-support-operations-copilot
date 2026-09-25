@@ -104,6 +104,20 @@ export const AgentFindingSchema = z.object({
 export type AgentFinding = z.infer<typeof AgentFindingSchema>;
 
 /**
+ * The parsing contract for the specialists that never cite policy (Billing and
+ * Technical): `AgentFindingSchema` without `policyReferences`. Neither agent is
+ * shown any policy, so its citations are always discarded and it stores
+ * `policyReferences: []` (DECISIONS.md, "Enforcing, not just prompting for,
+ * grounded policy citations"). Validating a field that is always thrown away let
+ * malformed citation metadata reject an otherwise valid finding; an object schema
+ * drops keys it does not declare, so here the field is simply ignored. Every
+ * substantive field keeps its full validation, and `AgentFindingSchema` itself,
+ * which Policy and Risk extend and whose citations are used, is unchanged. See
+ * DECISIONS.md ("Billing and Technical do not parse policy citations").
+ */
+export const NonCitingAgentFindingSchema = AgentFindingSchema.omit({ policyReferences: true });
+
+/**
  * Controlled flag vocabulary `resolveOutcome()` actually reads (see
  * resolve.ts). Flags outside this list are allowed (agents can note
  * something informational) but only these drive resolution logic — this

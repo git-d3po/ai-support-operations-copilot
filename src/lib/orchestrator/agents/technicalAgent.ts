@@ -1,5 +1,5 @@
-import { AGENT_SUMMARY_MAX_CHARS, AgentFindingSchema, KNOWN_AGENT_FLAGS } from "@/lib/ai/schemas";
-import { filterGroundedPolicyReferences, retrieveRelevantProductDocs } from "../evidence";
+import { AGENT_SUMMARY_MAX_CHARS, KNOWN_AGENT_FLAGS, NonCitingAgentFindingSchema, type AgentFinding } from "@/lib/ai/schemas";
+import { retrieveRelevantProductDocs } from "../evidence";
 import { formatConversation, formatProductDocs, buildSystemPrompt, JSON_ONLY_INSTRUCTION } from "../prompts";
 import { runStructuredStep } from "../runStructuredStep";
 import type { AgentContext, AgentResult, SpecialistAgent } from "../types";
@@ -43,12 +43,12 @@ export const technicalAgent: SpecialistAgent = {
   async run(context): Promise<AgentResult> {
     const { data, parseError, metrics } = await runStructuredStep(
       "technical",
-      AgentFindingSchema,
+      NonCitingAgentFindingSchema,
       (retryContext) => buildRequest(context, retryContext),
     );
-    // Technical is never shown any policy documents (only product docs) —
-    // see billingAgent.ts for why this is stripped anyway.
-    const finding = data ? { ...data, policyReferences: filterGroundedPolicyReferences(data.policyReferences, []) } : degradedAgentFinding("technical", parseError!);
+    // Technical is never shown any policy documents (only product docs), so its
+    // parsing contract has no citations and it stores none; see billingAgent.ts.
+    const finding: AgentFinding = data ? { ...data, policyReferences: [] } : degradedAgentFinding("technical", parseError!);
     return {
       finding,
       metrics,

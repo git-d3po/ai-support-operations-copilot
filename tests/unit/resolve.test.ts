@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveOutcome } from "@/lib/orchestrator/resolve";
 import { makeClassification } from "./testSupport/fixtures";
 import { EscalationDecisionSchema, ResolutionDecisionSchema, TICKET_INTENTS, type AnyAgentFinding } from "@/lib/ai/schemas";
-import { degradedRiskFinding } from "@/lib/orchestrator/agents/fallback";
+import { degradedAgentFinding, degradedRiskFinding } from "@/lib/orchestrator/agents/fallback";
 
 function billingFinding(overrides: Partial<AnyAgentFinding> = {}): AnyAgentFinding {
   return {
@@ -433,6 +433,147 @@ describe("resolveOutcome: failed_payment is Billing-owned when Billing flags a f
     it.each(otherIntents)("%s: Billing's flag alone still yields reply_and_monitor (rule 9 unchanged)", (intent) => {
       const { resolution } = resolveOutcome(makeClassification({ intent }), false, [paymentFailed()]);
       expect(resolution.action).toBe("reply_and_monitor");
+    });
+  });
+});
+
+/**
+ * Rule 6c (DECISIONS.md, "failed_payment: a degraded Billing finding escalates").
+ * When Billing ran but degraded to `agent_failed`, the only specialist with the
+ * payment state has told us nothing, so Technical's documentation-only flags
+ * (rules 7-8) must not decide a failed_payment ticket. Before this rule a forensic
+ * reproduction through the real orchestrator gave auto_resolve (Technical
+ * auto_resolvable) and reply_and_close (Technical known issue), both with no
+ * human review. The degraded finding used here is the real fallback
+ * (`degradedAgentFinding`), not a hand-built lookalike.
+ */
+describe("resolveOutcome: failed_payment with a degraded Billing finding escalates", () => {
+  const failedPayment = () => makeClassification({ intent: "failed_payment" });
+  const degradedBilling = () => degradedAgentFinding("billing", "flags.0: Invalid input");
+  const technicalAuto = () => technicalFinding({ flags: ["auto_resolvable"] });
+  const technicalKnownIssue = () => technicalFinding({ flags: ["known_issue_workaround_available"] });
+
+  function expectHumanReviewEscalation(result: ReturnType<typeof resolveOutcome>) {
+    expect(result.resolution.action).toBe("escalate");
+    expect(result.resolution.requiresHumanReview).toBe(true);
+    expect(result.escalation?.targetTeam).toBe("senior_support");
+    expect(ResolutionDecisionSchema.safeParse(result.resolution).success).toBe(true);
+    expect(EscalationDecisionSchema.safeParse(result.escalation).success).toBe(true);
+  }
+
+  describe("Technical's non-escalating flags can no longer decide", () => {
+    it("Technical auto_resolvable -> human-review escalation, never auto_resolve, in either finding order", () => {
+      for (const findings of [[degradedBilling(), technicalAuto()], [technicalAuto(), degradedBilling()]]) {
+        const result = resolveOutcome(failedPayment(), false, findings);
+        expect(result.resolution.action).not.toBe("auto_resolve");
+        expectHumanReviewEscalation(result);
+      }
+    });
+
+    it("Technical known_issue_workaround_available -> human-review escalation, never reply_and_close, in either order", () => {
+      for (const findings of [[degradedBilling(), technicalKnownIssue()], [technicalKnownIssue(), degradedBilling()]]) {
+        const result = resolveOutcome(failedPayment(), false, findings);
+        expect(result.resolution.action).not.toBe("reply_and_close");
+        expectHumanReviewEscalation(result);
+      }
+    });
+
+    it("is the same outcome rule 10 already gives a degraded Billing finding on its own (no new team or wording)", () => {
+      const billingAlone = resolveOutcome(failedPayment(), false, [degradedBilling()]);
+      expect(resolveOutcome(failedPayment(), false, [degradedBilling(), technicalAuto()])).toEqual(billingAlone);
+      expect(resolveOutcome(failedPayment(), false, [degradedBilling(), technicalKnownIssue()])).toEqual(billingAlone);
+    });
+  });
+
+  describe("everything above it keeps its precedence", () => {
+    it("Technical requires_escalation still escalates to engineering, in either order", () => {
+      const technical = technicalFinding({ flags: ["known_issue_workaround_already_tried", "requires_escalation"] });
+      for (const findings of [[degradedBilling(), technical], [technical, degradedBilling()]]) {
+        const { resolution, escalation } = resolveOutcome(failedPayment(), false, findings);
+        expect(resolution.action).toBe("escalate");
+        expect(escalation?.targetTeam).toBe("engineering");
+      }
+    });
+
+    it("a failed classification still wins", () => {
+      const { resolution, escalation } = resolveOutcome(failedPayment(), true, [degradedBilling(), technicalAuto()]);
+      expect(resolution.summary).toMatch(/classification failed/i);
+      expect(escalation?.targetTeam).toBe("senior_support");
+      expect(escalation?.severity).toBe("medium");
+    });
+
+    it("a Risk-recommended escalation still wins", () => {
+      const { escalation } = resolveOutcome(failedPayment(), false, [
+        riskFinding(true, { targetTeam: "trust_and_safety", severity: "high" }),
+        degradedBilling(),
+        technicalAuto(),
+      ]);
+      expect(escalation?.targetTeam).toBe("trust_and_safety");
+    });
+
+    it("a Policy decision still decides (approve, deny and requires_review)", () => {
+      const cases = [
+        ["approve", "refund_customer"],
+        ["deny", "deny_request"],
+        ["requires_review", "escalate"],
+      ] as const;
+      for (const [decision, action] of cases) {
+        const { resolution, escalation } = resolveOutcome(failedPayment(), false, [
+          policyFinding(decision),
+          degradedBilling(),
+          technicalAuto(),
+        ]);
+        expect(resolution.action).toBe(action);
+        if (decision === "requires_review") expect(escalation?.targetTeam).toBe("billing_ops");
+      }
+    });
+
+    it("the account-security invariant is unaffected (rule 1b decides first)", () => {
+      const { escalation } = resolveOutcome(makeClassification({ intent: "account_security" }), false, [
+        degradedBilling(),
+        technicalAuto(),
+      ]);
+      expect(escalation?.targetTeam).toBe("trust_and_safety");
+    });
+  });
+
+  describe("regression pins: only a present, degraded Billing finding on failed_payment is affected", () => {
+    it("a valid Billing payment-failed finding still decides: reply_and_monitor (rule 6b)", () => {
+      const billing = billingFinding({ flags: ["payment_failed_awaiting_customer_action"] });
+      expect(resolveOutcome(failedPayment(), false, [billing, technicalAuto()]).resolution.action).toBe("reply_and_monitor");
+    });
+
+    it("Billing ran and found no issue: Technical's auto_resolvable still decides, as before", () => {
+      for (const flags of [["no_billing_issue_found"], []]) {
+        expect(
+          resolveOutcome(failedPayment(), false, [billingFinding({ flags }), technicalAuto()]).resolution.action,
+        ).toBe("auto_resolve");
+      }
+    });
+
+    it("Billing valid but Technical degraded: Billing still decides (reply_and_monitor)", () => {
+      const billing = billingFinding({ flags: ["payment_failed_awaiting_customer_action"] });
+      const result = resolveOutcome(failedPayment(), false, [billing, degradedAgentFinding("technical", "x")]);
+      expect(result.resolution.action).toBe("reply_and_monitor");
+      expect(result.escalation).toBeNull();
+    });
+
+    it("Billing not routed at all (Technical alone): unchanged, Technical's auto_resolvable decides", () => {
+      // A separate routing question (whether Billing must always run for failed_payment), deliberately not
+      // answered by this rule: it applies only when Billing ran and degraded.
+      expect(resolveOutcome(failedPayment(), false, [technicalAuto()]).resolution.action).toBe("auto_resolve");
+    });
+
+    // account_security is excluded: rule 1b escalates it before any of this is reached.
+    const otherIntents = TICKET_INTENTS.filter((i) => i !== "failed_payment" && i !== "account_security");
+
+    it.each(otherIntents)("%s: a degraded Billing finding still lets Technical decide, exactly as before", (intent) => {
+      expect(
+        resolveOutcome(makeClassification({ intent }), false, [degradedBilling(), technicalAuto()]).resolution.action,
+      ).toBe("auto_resolve");
+      expect(
+        resolveOutcome(makeClassification({ intent }), false, [degradedBilling(), technicalKnownIssue()]).resolution.action,
+      ).toBe("reply_and_close");
     });
   });
 });

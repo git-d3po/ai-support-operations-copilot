@@ -24,6 +24,29 @@ function fitToLimit(text: string): string {
   return text.length <= MAX_TEXT ? text : `${text.slice(0, MAX_TEXT - 1)}…`;
 }
 
+/**
+ * The conservative outcome when a specialist that was asked to investigate
+ * failed to produce a valid finding: escalate for human review rather than
+ * decide on incomplete evidence. Shared by rule 6c and rule 10 so the two can
+ * never drift apart.
+ */
+function agentFailureEscalation(): ResolveOutcomeResult {
+  return {
+    resolution: {
+      action: "escalate",
+      summary: "One or more specialist agents failed to produce a valid result for this ticket.",
+      confidence: 0,
+      requiresHumanReview: true,
+    },
+    escalation: {
+      required: true,
+      reason: "Agent failure during orchestration.",
+      targetTeam: "senior_support",
+      severity: "low",
+    },
+  };
+}
+
 function average(numbers: number[]): number {
   if (numbers.length === 0) return 0;
   return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
@@ -43,7 +66,8 @@ function average(numbers: number[]): number {
  * enforced deterministically below); a Policy Agent decision governs
  * refund/deny outcomes; Technical's flags govern technical resolutions
  * (except that, for a `failed_payment` ticket, Billing's payment-failed flag
- * governs ahead of Technical's non-escalating flags); Billing's flags cover
+ * governs ahead of Technical's non-escalating flags, and a degraded Billing
+ * finding escalates instead of letting them decide); Billing's flags cover
  * payment-status replies; anything left over falls through to a
  * confidence-based default.
  */
@@ -216,6 +240,25 @@ export function resolveOutcome(
     };
   }
 
+  // 6c. failed_payment with a degraded Billing finding: Billing ran but could not
+  // produce a valid result (`agent_failed`), so the one specialist that sees the
+  // invoice and payment state has told us nothing. Rules 7-8 would then let
+  // Technical's documentation-only flags decide (auto_resolve / reply_and_close),
+  // which is exactly what rule 6b exists to prevent: they cannot establish that a
+  // payment problem is resolved. Escalate for human review instead, with the same
+  // outcome rule 10 gives any agent failure. Placed after rule 6 (Technical's
+  // escalation still wins) and 6b (a valid Billing finding still decides). Only a
+  // Billing finding that is present and degraded triggers it: when Billing was not
+  // routed at all, rules 7-9 apply as before (a separate routing question). Every
+  // other intent is unchanged. See DECISIONS.md ("failed_payment: a degraded
+  // Billing finding escalates").
+  if (
+    classification.intent === "failed_payment" &&
+    billingFinding?.flags.includes(KNOWN_AGENT_FLAGS.AGENT_FAILED)
+  ) {
+    return agentFailureEscalation();
+  }
+
   // 7. Technical: standard self-service flow, nothing further to do.
   if (technicalFinding?.flags.includes(KNOWN_AGENT_FLAGS.AUTO_RESOLVABLE)) {
     return {
@@ -258,20 +301,7 @@ export function resolveOutcome(
   // 10. One or more selected agents outright failed and nothing above
   // already produced a confident decision — be conservative.
   if (anyAgentFailed) {
-    return {
-      resolution: {
-        action: "escalate",
-        summary: "One or more specialist agents failed to produce a valid result for this ticket.",
-        confidence: 0,
-        requiresHumanReview: true,
-      },
-      escalation: {
-        required: true,
-        reason: "Agent failure during orchestration.",
-        targetTeam: "senior_support",
-        severity: "low",
-      },
-    };
+    return agentFailureEscalation();
   }
 
   // 11. No specialist agents ran at all — genuinely ambiguous ticket.
