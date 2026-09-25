@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { NAV_GROUPS, navItemState } from "@/lib/navigation";
@@ -14,13 +14,33 @@ const activeFor = (pathname: string) =>
   ALL_ITEMS.filter((i) => navItemState(pathname, i) !== null).map((i) => ({ href: i.href, state: navItemState(pathname, i) }));
 
 describe("information architecture", () => {
-  it("groups the destinations as Operations / AI Operations / Knowledge / Administration", () => {
+  it("groups the destinations as Support / AI system / Reference / Configuration", () => {
     expect(NAV_GROUPS.map((g) => [g.label, g.items.map((i) => i.label)])).toEqual([
-      ["Operations", ["Inbox"]],
-      ["AI Operations", ["Operations", "Evaluations"]],
-      ["Knowledge", ["Knowledge"]],
-      ["Administration", ["Settings"]],
+      ["Support", ["Inbox"]],
+      ["AI system", ["AI Operations", "Evaluations"]],
+      ["Reference", ["Knowledge & Policies"]],
+      ["Configuration", ["Model Routing"]],
     ]);
+  });
+
+  it("never gives a group the same name as one of its own destinations", () => {
+    for (const group of NAV_GROUPS) {
+      expect(group.items.map((i) => i.label), group.label).not.toContain(group.label);
+    }
+  });
+
+  it("keeps the existing URLs: labels changed, routes did not", () => {
+    expect(ALL_ITEMS.map((i) => i.href)).toEqual(["/inbox", "/operations", "/evaluations", "/knowledge", "/settings"]);
+  });
+
+  it("labels each destination with its page's own name (the page <h1> and document title)", () => {
+    const appDir = path.resolve(__dirname, "../../src/app");
+    for (const { href, label } of ALL_ITEMS) {
+      const source = readFileSync(path.join(appDir, href, "page.tsx"), "utf8");
+      const heading = source.match(/<h1[^>]*>([^<]+)<\/h1>/)?.[1].replace(/&amp;/g, "&");
+      const title = source.match(/metadata: Metadata = \{ title: "([^"]+)" \}/)?.[1];
+      expect({ href, heading, title }).toEqual({ href, heading: label, title: label });
+    }
   });
 
   it("links only to routes that exist in src/app (none invented)", () => {

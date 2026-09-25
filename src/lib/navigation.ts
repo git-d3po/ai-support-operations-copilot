@@ -21,17 +21,24 @@ export type NavItem = {
 
 export type NavGroup = { label: string; items: readonly NavItem[] };
 
+/**
+ * Each item's label is its page's name: the same words as that page's `<h1>`
+ * and document title, so the link, the heading and the browser tab agree. No
+ * group shares a name with one of its own items. URLs are stable identifiers
+ * and do not follow the labels: the model-routing page stays at `/settings`.
+ * See DECISIONS.md ("Responsive shell and consistent navigation labels").
+ */
 export const NAV_GROUPS: readonly NavGroup[] = [
-  { label: "Operations", items: [{ href: "/inbox", label: "Inbox", sectionPrefixes: ["/tickets"] }] },
+  { label: "Support", items: [{ href: "/inbox", label: "Inbox", sectionPrefixes: ["/tickets"] }] },
   {
-    label: "AI Operations",
+    label: "AI system",
     items: [
-      { href: "/operations", label: "Operations" },
+      { href: "/operations", label: "AI Operations" },
       { href: "/evaluations", label: "Evaluations" },
     ],
   },
-  { label: "Knowledge", items: [{ href: "/knowledge", label: "Knowledge" }] },
-  { label: "Administration", items: [{ href: "/settings", label: "Settings" }] },
+  { label: "Reference", items: [{ href: "/knowledge", label: "Knowledge & Policies" }] },
+  { label: "Configuration", items: [{ href: "/settings", label: "Model Routing" }] },
 ];
 
 /**

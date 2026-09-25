@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { formatDate, formatTime } from "@/lib/format";
 import { labelChannel } from "@/lib/labels";
 import { Badge } from "@/components/ui/Badge";
+import { TableScroll } from "@/components/ui/TableScroll";
 import { PriorityLabel, RecommendationLabel, StatusLabel } from "@/components/ticket-labels";
 import type { ResolutionDecision } from "@/lib/ai/schemas";
 
@@ -23,14 +24,14 @@ export default async function InboxPage() {
   });
 
   return (
-    <div className="p-6">
+    <div className="p-4 lg:p-6">
       <h1 className="text-lg font-semibold">Inbox</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {tickets.length} tickets. The AI recommendation comes from each ticket&apos;s latest
         analysis. It is a proposal: nothing is carried out automatically.
       </p>
 
-      <div className="mt-4 overflow-x-auto">
+      <TableScroll className="mt-4">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -91,7 +92,7 @@ export default async function InboxPage() {
             ))}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
     </div>
   );
 }

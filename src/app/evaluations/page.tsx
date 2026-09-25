@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { LINK_CLASSES } from "@/components/app-state";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { TableScroll } from "@/components/ui/TableScroll";
 import { labelAction, labelAgentShort, labelIntent } from "@/lib/labels";
 import type {
   EvaluationExpectedOutcome,
@@ -46,7 +47,7 @@ export default async function EvaluationsPage() {
   const livePassedCount = liveScoredCases.filter((c) => c.results[0].passed).length;
 
   return (
-    <div className="p-6">
+    <div className="p-4 lg:p-6">
       <h1 className="text-lg font-semibold">Evaluations</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {cases.length} curated scenarios, each scored against a known expected outcome.
@@ -79,95 +80,98 @@ export default async function EvaluationsPage() {
         )}
       </div>
 
-      <table className="mt-4 w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="py-2 pr-4">Scenario</th>
-            <th className="py-2 pr-4">Ticket</th>
-            <th className="py-2 pr-4">Expected</th>
-            <th className="py-2 pr-4">Actual</th>
-            <th className="py-2 pr-4">Dimensions</th>
-            <th className="py-2 pr-4">Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cases.map((evalCase) => {
-            const expected = evalCase.expectedOutcome as unknown as EvaluationExpectedOutcome;
-            const result = evalCase.results[0] as
-              | { scores: unknown; passed: boolean; isSimulated: boolean; orchestrationRunId: string }
-              | undefined;
-            const scores = result?.scores as EvaluationResultScores | undefined;
-            const run = result ? runsById.get(result.orchestrationRunId) : undefined;
-            const actualClassification = run?.classification as unknown as TicketClassification | undefined;
-            const actualResolution = run?.resolution as unknown as ResolutionDecision | undefined;
-            const actualEscalated = run ? run.escalation !== null : undefined;
+      {/* Scrolls inside its own box on a narrow screen; the minimum width keeps the outcome columns legible. */}
+      <TableScroll className="mt-4">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="py-2 pr-4">Scenario</th>
+              <th className="py-2 pr-4">Ticket</th>
+              <th className="py-2 pr-4">Expected</th>
+              <th className="py-2 pr-4">Actual</th>
+              <th className="py-2 pr-4">Dimensions</th>
+              <th className="py-2 pr-4">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cases.map((evalCase) => {
+              const expected = evalCase.expectedOutcome as unknown as EvaluationExpectedOutcome;
+              const result = evalCase.results[0] as
+                | { scores: unknown; passed: boolean; isSimulated: boolean; orchestrationRunId: string }
+                | undefined;
+              const scores = result?.scores as EvaluationResultScores | undefined;
+              const run = result ? runsById.get(result.orchestrationRunId) : undefined;
+              const actualClassification = run?.classification as unknown as TicketClassification | undefined;
+              const actualResolution = run?.resolution as unknown as ResolutionDecision | undefined;
+              const actualEscalated = run ? run.escalation !== null : undefined;
 
-            return (
-              <tr key={evalCase.id} className="border-b border-zinc-100 align-top dark:border-zinc-900">
-                {/* The canonical scenario key, deliberately shown as-is: it is the scenario's identifier. */}
-                <td className="whitespace-nowrap py-2 pr-4 font-medium">{evalCase.scenarioKey}</td>
-                <td className="py-2 pr-4">
-                  <Link href={`/tickets/${evalCase.ticketId}`} className={LINK_CLASSES}>
-                    {evalCase.ticket.subject}
-                  </Link>
-                </td>
-                <td className="py-2 pr-4 text-xs">
-                  <OutcomeLines
-                    intent={labelIntent(expected.expectedIntent)}
-                    specialists={expected.expectedAgents.map(labelAgentShort).join(", ")}
-                    escalated={expected.expectedEscalation}
-                    action={labelAction(expected.expectedAction)}
-                  />
-                </td>
-                <td className="py-2 pr-4 text-xs">
-                  {!run ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
+              return (
+                <tr key={evalCase.id} className="border-b border-zinc-100 align-top dark:border-zinc-900">
+                  {/* The canonical scenario key, deliberately shown as-is: it is the scenario's identifier. */}
+                  <td className="whitespace-nowrap py-2 pr-4 font-medium">{evalCase.scenarioKey}</td>
+                  <td className="py-2 pr-4">
+                    <Link href={`/tickets/${evalCase.ticketId}`} className={LINK_CLASSES}>
+                      {evalCase.ticket.subject}
+                    </Link>
+                  </td>
+                  <td className="py-2 pr-4 text-xs">
                     <OutcomeLines
-                      intent={actualClassification ? labelIntent(actualClassification.intent) : "—"}
-                      escalated={actualEscalated ?? false}
-                      action={actualResolution ? labelAction(actualResolution.action) : "—"}
+                      intent={labelIntent(expected.expectedIntent)}
+                      specialists={expected.expectedAgents.map(labelAgentShort).join(", ")}
+                      escalated={expected.expectedEscalation}
+                      action={labelAction(expected.expectedAction)}
                     />
-                  )}
-                </td>
-                <td className="py-2 pr-4">
-                  {!scores ? (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  ) : (
-                    <div className="flex flex-col gap-0.5 text-xs">
-                      {DIMENSION_LABELS.map(({ key, label }) => {
-                        const value = scores[key];
-                        return (
-                          <span key={key}>
-                            {value === null ? "◦" : value ? "✓" : "✗"} {label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                </td>
-                <td className="py-2 pr-4">
-                  {!result || !scores ? (
-                    <span className="text-xs text-muted-foreground">Not run</span>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {result.isSimulated && <Badge tone="info">Simulated</Badge>}
-                        <Badge tone={result.passed ? "success" : "danger"}>
-                          {result.passed ? "Pass" : "Fail"} ({scores.overallScore.toFixed(2)})
-                        </Badge>
+                  </td>
+                  <td className="py-2 pr-4 text-xs">
+                    {!run ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <OutcomeLines
+                        intent={actualClassification ? labelIntent(actualClassification.intent) : "—"}
+                        escalated={actualEscalated ?? false}
+                        action={actualResolution ? labelAction(actualResolution.action) : "—"}
+                      />
+                    )}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {!scores ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        {DIMENSION_LABELS.map(({ key, label }) => {
+                          const value = scores[key];
+                          return (
+                            <span key={key}>
+                              {value === null ? "◦" : value ? "✓" : "✗"} {label}
+                            </span>
+                          );
+                        })}
                       </div>
-                      {!result.passed && (
-                        <p className="max-w-xs text-xs text-muted-foreground">{scores.notes}</p>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {!result || !scores ? (
+                      <span className="text-xs text-muted-foreground">Not run</span>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {result.isSimulated && <Badge tone="info">Simulated</Badge>}
+                          <Badge tone={result.passed ? "success" : "danger"}>
+                            {result.passed ? "Pass" : "Fail"} ({scores.overallScore.toFixed(2)})
+                          </Badge>
+                        </div>
+                        {!result.passed && (
+                          <p className="max-w-xs text-xs text-muted-foreground">{scores.notes}</p>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </TableScroll>
 
       <Card dashed padding="lg" className="mt-6 text-sm text-muted-foreground">
         Each scenario is scored on five dimensions: classification, routing, policy, escalation and
@@ -193,9 +197,11 @@ function OutcomeLines({
   action: string;
 }) {
   return (
+    // Each value is a short label kept on one line (a 1024px table was breaking "General inquiry" into two);
+    // only the specialist list may wrap, at its commas.
     <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
       <dt className="text-muted-foreground">Intent</dt>
-      <dd>{intent}</dd>
+      <dd className="whitespace-nowrap">{intent}</dd>
       {specialists !== undefined && (
         <>
           <dt className="text-muted-foreground">Specialists</dt>
@@ -203,9 +209,9 @@ function OutcomeLines({
         </>
       )}
       <dt className="text-muted-foreground">Escalation</dt>
-      <dd>{escalated ? "Yes" : "No"}</dd>
+      <dd className="whitespace-nowrap">{escalated ? "Yes" : "No"}</dd>
       <dt className="text-muted-foreground">Action</dt>
-      <dd>{action}</dd>
+      <dd className="whitespace-nowrap">{action}</dd>
     </dl>
   );
 }

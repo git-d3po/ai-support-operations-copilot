@@ -108,8 +108,12 @@ export default async function TicketDetailPage({
   const demoDisabledReason = demoMode && !hasDemoRecording(ticket.scenarioKey) ? DEMO_CURATED_ONLY_MESSAGE : null;
   const isDemoRun = latestRun?.agentInvocations.some((inv) => inv.provider === DEMO_PROVIDER_KEY) ?? false;
 
+  // Two columns from `lg`: the ticket and its analysis beside the customer/account context (a little narrower
+  // until `xl`, so the analysis keeps a readable width next to the sidebar). Below `lg`, one column in reading
+  // order: the ticket and conversation, the recommendation, the draft reply, how it was decided and the agent
+  // trace, then the customer/account context.
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-6 p-6">
+    <div className="grid grid-cols-1 gap-6 p-4 lg:p-6 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_320px]">
       <div>
         <header>
           <h1 className="text-lg font-semibold">{ticket.subject}</h1>
@@ -135,7 +139,7 @@ export default async function TicketDetailPage({
           <div className="mt-2 flex flex-col gap-3">
             {ticket.messages.map((message) => (
               <Card key={message.id} padding="md" className="text-sm">
-                <div className="mb-1 flex justify-between gap-4 text-xs text-muted-foreground">
+                <div className="mb-1 flex flex-wrap justify-between gap-x-4 text-xs text-muted-foreground">
                   <span>
                     <span className="font-medium text-zinc-700 dark:text-zinc-300">{message.authorName}</span>
                     {" · "}
@@ -150,7 +154,7 @@ export default async function TicketDetailPage({
         </section>
 
         <section className="mt-8" aria-labelledby="ai-heading">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
             <SectionHeading id="ai-heading">AI orchestration</SectionHeading>
             <RunAnalysisButton
               ticketId={ticket.id}

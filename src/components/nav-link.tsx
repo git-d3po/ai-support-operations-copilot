@@ -23,8 +23,9 @@ export function NavLink({ item }: { item: NavItem }) {
       href={item.href}
       aria-current={state === "page" ? "page" : state === "section" ? "true" : undefined}
       className={[
-        // Focus ring: the global rule in globals.css. Colour changes ease over 150ms.
-        "relative block rounded px-2 py-1.5 text-sm transition-colors",
+        // Focus ring: the global rule in globals.css. Colour changes ease over 150ms. A label never breaks
+        // inside itself; in the compact bar (below `lg`) the link is a little taller, as a touch target.
+        "relative block whitespace-nowrap rounded px-2 py-2 text-sm transition-colors lg:py-1.5",
         state
           ? "bg-zinc-200 font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground dark:bg-zinc-800"
           : "text-zinc-700 hover:bg-zinc-100 hover:text-foreground dark:text-zinc-300 dark:hover:bg-zinc-800/60",

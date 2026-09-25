@@ -2913,3 +2913,55 @@ characters did so live on 2026-09-19). Rule 6c makes the `failed_payment` outcom
 whatever the cause. An orchestrator test drives both: a Billing finding with a malformed
 citation now survives (one call, flag kept) and decides `reply_and_monitor`; a genuinely
 degraded one escalates instead of letting Technical auto-resolve.
+
+## 2026-09-24 — Responsive shell and consistent navigation labels
+
+**Context:** A read-only product/UI audit measured every route at 390, 768, 1024
+and 1440px. Below desktop the application was unusable: the 224px sidebar never
+collapsed, leaving 166px for content at 390px; ticket detail's fixed
+`[1fr_320px]` grid collapsed its main column to 0px under an overlapping aside;
+Knowledge and Operations squeezed two columns into that space; the Evaluations
+and Settings tables overflowed the page. Separately, the navigation contradicted
+itself: a group named "Operations" held the Inbox while the page titled "AI
+Operations" was the link "Operations"; "Knowledge" was a group containing only
+"Knowledge"; the read-only model-routing page was labelled "Settings".
+
+**Decision made:**
+- **Shell.** One navigation markup, two layouts. From `lg` (1024px) it is the
+  existing sidebar, unchanged. Below `lg` it is a compact bar above the page:
+  the identity and the five links wrap (one row at tablet width, two on a
+  phone), group labels are visually hidden but still name their lists, and the
+  document scrolls as a whole so the bar scrolls away. Chosen over a `<details>`
+  menu: with Next's persistent layout a native disclosure stays open after a
+  client-side navigation (closing it needs script), five destinations fit
+  without hiding any, and it keeps the shell a server component with no second
+  copy of the navigation.
+- **Pages.** 16px gutters below `lg`, 24px from it. Ticket detail is one column
+  below `lg` in reading order (ticket and conversation, recommendation, draft
+  reply, how it was decided, agent trace, then customer/account context); from
+  `lg` the two columns return, with a 280px context column until `xl` and the
+  original 320px from `xl`. Knowledge is two columns from `md`; Operations'
+  volume cards and metric tiles from `sm`.
+- **Tables.** A small shared `TableScroll` (the Inbox's existing pattern):
+  a wide table scrolls inside its own box and the page never does. It is
+  `relative` so absolutely positioned content inside a table (the Inbox's
+  `sr-only` header text) is clipped by it; without that, that text alone made a
+  390px page 639px wide. Evaluations keeps short outcome labels on one line.
+- **Labels.** Groups are Support / AI system / Reference / Configuration; each
+  link carries its page's own name, the same words as its `<h1>` and document
+  title: Inbox, AI Operations, Evaluations, Knowledge & Policies, Model Routing.
+  URLs are unchanged (`/settings` stays), so links and bookmarks keep working.
+
+**Deliberately not changed:** the visual system (palette, tones, components,
+type, focus ring, dark-mode tokens), the desktop layout at 1440px, and all
+content and semantics: Evaluations still shows "Not run", and no orchestration,
+evaluation, Demo Mode, data or copy change beyond the labels above. Documents
+that mention the "Settings" page by name were left for a documentation pass.
+
+**Verification:** Measured in the browser at 390, 768, 1024 and 1440px, light
+and dark, on every route plus a curated and an uncurated ticket (no document
+overflow; no overlap; tables scroll inside their box). Playwright
+`tests/e2e/responsive.spec.ts` protects it: no sideways scroll at 390 and 768px,
+the compact navigation reaches every destination with `aria-current`, keyboard
+focus and named lists, ticket detail stacks without overlap, wide tables stay
+contained, and the desktop sidebar and two-column ticket layout are unchanged.

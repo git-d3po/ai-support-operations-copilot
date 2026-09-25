@@ -23,7 +23,7 @@ export const SECONDARY_ACTION_CLASSES = `text-sm font-medium ${LINK_CLASSES}`;
 /**
  * The layout shared by the application's own states that replace a page: not
  * found (app/not-found.tsx) and runtime error (app/error.tsx, app/global-error.tsx).
- * It uses the same header rhythm as every page (`p-6`, a `text-lg` h1, a muted
+ * It uses the same header rhythm as every page (`p-4 lg:p-6`, a `text-lg` h1, a muted
  * lead), so a state reads as another screen of the product rather than a
  * framework page, with no illustration, icon or new color.
  *
@@ -42,7 +42,7 @@ export function AppState({
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
-    <div className="p-6">
+    <div className="p-4 lg:p-6">
       <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="text-lg font-semibold focus:outline-none">
         {title}
       </h1>

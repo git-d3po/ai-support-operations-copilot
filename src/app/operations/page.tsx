@@ -7,6 +7,7 @@ import { LINK_CLASSES } from "@/components/app-state";
 import { Card } from "@/components/ui/Card";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { Stat } from "@/components/ui/Stat";
+import { TableScroll } from "@/components/ui/TableScroll";
 import {
   PRIORITY_ORDER,
   TICKET_STATUS_ORDER,
@@ -68,7 +69,7 @@ export default async function OperationsPage() {
   const priorityRows = sortByDisplayOrder(priorityCounts, (row) => row.priority, PRIORITY_ORDER);
 
   return (
-    <div className="p-6">
+    <div className="p-4 lg:p-6">
       <h1 className="text-lg font-semibold">AI Operations</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Ticket volume across the queue, and how AI orchestration is running: runs, failures, escalation and
@@ -83,7 +84,8 @@ export default async function OperationsPage() {
         </p>
       )}
 
-      <div className="mt-6 grid grid-cols-2 gap-6">
+      {/* One column on a phone: two side by side there would each be too narrow for their headings. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Card padding="lg">
           <SectionHeading>Ticket volume by status</SectionHeading>
           <ul className="mt-2 text-sm">
@@ -146,8 +148,9 @@ export default async function OperationsPage() {
       ) : (
         <section aria-labelledby="run-metrics-heading" className="mt-6">
           <SectionHeading id="run-metrics-heading">Run metrics</SectionHeading>
-          {/* Seven tiles: the last spans two columns, so neither the 2- nor the 4-column grid leaves an empty slot. */}
-          <div className="mt-2 grid grid-cols-2 gap-6 lg:grid-cols-4">
+          {/* Seven tiles: the last spans two columns, so neither the 2- nor the 4-column grid leaves an empty slot.
+              On a phone they stack in one column (the span applies only where there are columns to span). */}
+          <div className="mt-2 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Orchestration runs" value={runs.length} />
             <Stat label="Failed runs" value={failedRuns.length} />
             <Stat label="Escalation rate" value={escalationRate != null ? `${(escalationRate * 100).toFixed(0)}%` : "—"} />
@@ -160,7 +163,7 @@ export default async function OperationsPage() {
             <Stat
               label="Estimated AI cost (all time)"
               value={`$${totalEstimatedCostUsd.toFixed(4)}`}
-              className="col-span-2"
+              className="sm:col-span-2"
             />
           </div>
 
@@ -171,33 +174,35 @@ export default async function OperationsPage() {
                 No agent invocations recorded yet. Run an AI analysis on a ticket to see per-step usage.
               </p>
             ) : (
-              <table className="mt-2 w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-1 pr-4">Step</th>
-                    <th className="py-1 pr-4">Invocations</th>
-                    <th className="py-1 pr-4">Avg latency</th>
-                    <th className="py-1 pr-4">Total cost</th>
-                    <th className="py-1 pr-4">Failures</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {perAgentStats.map((stat) => (
-                    <tr key={stat.key} className="border-b border-zinc-100 dark:border-zinc-900">
-                      <td className="py-1 pr-4">{labelAgent(stat.key)}</td>
-                      <td className="py-1 pr-4">{stat.count}</td>
-                      <td className="py-1 pr-4">{stat.avgLatencyMs != null ? `${Math.round(stat.avgLatencyMs)}ms` : "—"}</td>
-                      <td className="py-1 pr-4">${stat.totalCostUsd.toFixed(5)}</td>
-                      <td className="py-1 pr-4">{stat.failures}</td>
+              <TableScroll className="mt-2">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="py-1 pr-4">Step</th>
+                      <th className="py-1 pr-4">Invocations</th>
+                      <th className="py-1 pr-4">Avg latency</th>
+                      <th className="py-1 pr-4">Total cost</th>
+                      <th className="py-1 pr-4">Failures</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {perAgentStats.map((stat) => (
+                      <tr key={stat.key} className="border-b border-zinc-100 dark:border-zinc-900">
+                        <td className="py-1 pr-4">{labelAgent(stat.key)}</td>
+                        <td className="py-1 pr-4">{stat.count}</td>
+                        <td className="py-1 pr-4">{stat.avgLatencyMs != null ? `${Math.round(stat.avgLatencyMs)}ms` : "—"}</td>
+                        <td className="py-1 pr-4">${stat.totalCostUsd.toFixed(5)}</td>
+                        <td className="py-1 pr-4">{stat.failures}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScroll>
             )}
           </Card>
 
           <Card dashed padding="lg" className="mt-6 text-sm text-muted-foreground">
-            Estimated cost applies each model&apos;s configured per-token price (see Settings) to the tokens
+            Estimated cost applies each model&apos;s configured per-token price (see Model Routing) to the tokens
             each call actually used. It is an operational estimate, not a billing statement.
           </Card>
         </section>

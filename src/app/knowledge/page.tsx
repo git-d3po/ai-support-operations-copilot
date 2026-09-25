@@ -3,10 +3,11 @@ import { db } from "@/lib/db";
 import { parseKnowledgeText, type Inline, type KnowledgeBlock } from "@/lib/knowledgeText";
 import { Card } from "@/components/ui/Card";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import { TableScroll } from "@/components/ui/TableScroll";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Knowledge" };
+export const metadata: Metadata = { title: "Knowledge & Policies" };
 
 export default async function KnowledgePage() {
   const [policies, docs] = await Promise.all([
@@ -15,14 +16,15 @@ export default async function KnowledgePage() {
   ]);
 
   return (
-    <div className="p-6">
+    <div className="p-4 lg:p-6">
       <h1 className="text-lg font-semibold">Knowledge &amp; Policies</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         The policies and product documentation the specialist agents cite. A policy cited on a ticket links
         to its entry here.
       </p>
 
-      <div className="mt-6 grid grid-cols-2 gap-6">
+      {/* Policies, then product documentation: side by side from tablet width, one after the other on a phone. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
         <section aria-labelledby="policies-heading">
           <SectionHeading id="policies-heading">Policies</SectionHeading>
           <ul className="mt-2 flex flex-col gap-3">
@@ -103,28 +105,31 @@ function Block({ block }: { block: KnowledgeBlock }) {
     }
     case "table":
       return (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              {block.header.map((cell, i) => (
-                <th key={i} className="py-1 pr-4 font-medium">
-                  <InlineText parts={cell} />
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.map((row, i) => (
-              <tr key={i} className="border-b border-zinc-100 dark:border-zinc-900">
-                {row.map((cell, j) => (
-                  <td key={j} className="py-1 pr-4">
+        // A table in a policy or document scrolls inside the entry rather than widening a narrow column.
+        <TableScroll>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                {block.header.map((cell, i) => (
+                  <th key={i} className="py-1 pr-4 font-medium">
                     <InlineText parts={cell} />
-                  </td>
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {block.rows.map((row, i) => (
+                <tr key={i} className="border-b border-zinc-100 dark:border-zinc-900">
+                  {row.map((cell, j) => (
+                    <td key={j} className="py-1 pr-4">
+                      <InlineText parts={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       );
   }
 }

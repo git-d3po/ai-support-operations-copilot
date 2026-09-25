@@ -16,10 +16,10 @@ test("root redirects to the inbox", async ({ page }) => {
 test("the navigation shows the Halcyon workspace and marks exactly the current destination", async ({ page }) => {
   const destinations = [
     { route: "/inbox", link: "Inbox" },
-    { route: "/operations", link: "Operations" },
+    { route: "/operations", link: "AI Operations" },
     { route: "/evaluations", link: "Evaluations" },
-    { route: "/knowledge", link: "Knowledge" },
-    { route: "/settings", link: "Settings" },
+    { route: "/knowledge", link: "Knowledge & Policies" },
+    { route: "/settings", link: "Model Routing" },
   ];
   for (const { route, link } of destinations) {
     await page.goto(route);
@@ -294,8 +294,8 @@ test("every page names itself in the document title", async ({ page }) => {
     ["/inbox", "Inbox"],
     ["/operations", "AI Operations"],
     ["/evaluations", "Evaluations"],
-    ["/knowledge", "Knowledge"],
-    ["/settings", "Settings"],
+    ["/knowledge", "Knowledge & Policies"],
+    ["/settings", "Model Routing"],
     ["/this-page-does-not-exist", "Page not found"],
     ["/tickets/does-not-exist", "Page not found"],
   ];
@@ -308,8 +308,8 @@ test("every page names itself in the document title", async ({ page }) => {
   await expect(page).toHaveTitle("Charged twice this billing cycle · AI Support Operations Copilot");
 });
 
-test("Settings page shows real model routing config", async ({ page }) => {
+test("Model Routing page shows real model routing config", async ({ page }) => {
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Model Routing" })).toBeVisible();
   await expect(page.getByText("claude-sonnet-5").first()).toBeVisible();
 });

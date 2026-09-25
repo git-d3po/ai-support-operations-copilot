@@ -17,10 +17,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      {/* Background and text color come from globals.css (the token source of truth); this only sets layout. */}
-      <body className="flex h-full min-h-screen">
+      {/* Background and text color come from globals.css (the token source of truth); this only sets layout.
+          From `lg`: the sidebar beside a page that scrolls on its own. Below `lg`: the navigation bar above
+          the page and the document scrolls as a whole, so the bar scrolls away instead of holding space. */}
+      <body className="min-h-screen lg:flex lg:h-full">
         <Nav />
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="min-w-0 lg:flex-1 lg:overflow-y-auto">
           <ModeBanner />
           {children}
         </main>
