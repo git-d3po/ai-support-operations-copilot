@@ -13,6 +13,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const PHONE = { width: 390, height: 844 };
 const TABLET = { width: 768, height: 1024 };
+const SMALL_DESKTOP = { width: 1024, height: 768 };
 const DESKTOP = { width: 1440, height: 900 };
 
 const DESTINATIONS = [
@@ -136,6 +137,28 @@ test("on a phone, wide tables scroll inside their own box and keep their columns
     const { scrollWidth, clientWidth } = await documentOverflow(page);
     expect(scrollWidth, route).toBeLessThanOrEqual(clientWidth);
   }
+});
+
+test("at 1024px, beside the sidebar, the recorded Evaluations table fits without scrolling sideways", async ({ page }) => {
+  // The narrowest width with the sidebar, where this six-column table is tightest: every column, the
+  // Result column with each Pass badge included, is visible without scrolling the table's own box.
+  await page.setViewportSize(SMALL_DESKTOP);
+  await page.goto("/evaluations");
+  const table = page.getByRole("table", { name: /^Recorded live evaluation/ });
+  await expect(table.locator("thead th")).toHaveCount(6);
+  const box = await table.evaluate((el) => {
+    const scroller = el.parentElement!;
+    return {
+      tableWidth: el.scrollWidth,
+      scrollerWidth: scroller.clientWidth,
+      resultRight: el.querySelector("thead th:last-child")!.getBoundingClientRect().right,
+      scrollerRight: scroller.getBoundingClientRect().right,
+    };
+  });
+  expect(box.tableWidth).toBeLessThanOrEqual(box.scrollerWidth);
+  expect(box.resultRight).toBeLessThanOrEqual(box.scrollerRight);
+  const { scrollWidth, clientWidth } = await documentOverflow(page);
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 });
 
 test("on the desktop, the sidebar and the two-column ticket layout are unchanged", async ({ page }) => {

@@ -219,3 +219,24 @@ test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {
   await page.goto("/operations");
   await expect(page.getByText(/^2 simulated runs are recorded in this deployment/)).toBeVisible();
 });
+
+test("demo analyses never become evaluation results: the recorded run and this deployment's state are unchanged", async ({ page }) => {
+  // Runs after the demo analyses above (this file is serial), so this deployment now holds two demo runs.
+  await page.goto("/evaluations");
+
+  // The recorded 2026-09-24 run is the committed record, untouched by anything run here.
+  const recorded = page.getByRole("region", { name: /^Recorded live evaluation · 24 Sep 2026$/ });
+  await expect(
+    recorded.getByText(
+      "11 of 11 passed (overall score ≥ 0.85) · 39 agent steps, 1 failed validation after a retry · estimated model cost $0.21",
+    ),
+  ).toBeVisible();
+  const duplicateBilling = recorded.getByRole("table").locator("tbody tr").filter({ hasText: "duplicate-billing" });
+  await expect(duplicateBilling.locator("td").nth(5)).toHaveText("Pass (1.00)");
+  await expect(recorded.getByText("Simulated", { exact: true })).toHaveCount(0);
+
+  // This deployment still has no evaluation: the demo runs were not scored and are not shown as results.
+  const deployment = page.getByRole("region", { name: "This deployment" });
+  await expect(deployment.getByText(/^No evaluation has been run in this deployment\./)).toBeVisible();
+  await expect(deployment.getByRole("table")).toHaveCount(0);
+});

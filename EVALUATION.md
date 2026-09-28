@@ -263,8 +263,8 @@ specific `OrchestrationRun` that was scored.
   to the `failed_payment` resolution-precedence change (DECISIONS.md,
   2026-09-20). When this was written, that change and the later
   `out-of-window-refund` scenario had not been measured live; both were in
-  the 2026-09-24 run below. The public Demo Mode deployment does not include
-  these results, so its Evaluations page shows "Not run".
+  the 2026-09-24 run below. These 2026-09-20 results are documentation
+  only: they are not shown in the application.
 - **Current live baseline: 2026-09-24** (DECISIONS.md, "Live evaluation
   refresh on a separate database"). One run of all 11 scenarios against the
   real Anthropic provider (`claude-haiku-4-5-20251001` and `claude-sonnet-5`,
@@ -300,6 +300,22 @@ specific `OrchestrationRun` that was scored.
   - `failed-payment` (0.86): routing scored incorrect because the classifier's
     domains included Technical (as on one earlier live run, not the first):
     classifier variance, with an open question about the expected agents.
+- **How the public Evaluations page shows it** (DECISIONS.md, "Recorded
+  live evaluation shipped as a verified snapshot"). The 2026-09-24 run is
+  shipped with the application as a committed record,
+  `src/lib/evaluation/recorded/live-2026-09-24.json`, exported read-only from
+  `eval-2026-09-24.db` (which stays local) by
+  `scripts/exportEvaluationSnapshot.ts`. The page shows it as "Recorded live
+  evaluation · 24 Sep 2026": dated, against commit `0a12bb9`, with each
+  scenario's expected and actual outcome, dimensions, score and pass, and a
+  note for each of the four imperfect passes. It states that it is a single
+  run that does not measure the deployment showing it, and that later changes
+  (`29fd3c0`) were not measured live. Below it, "This deployment" shows the
+  deployment's own evaluation state from its database: in Demo Mode, that no
+  evaluation has been run there. Demo analyses are never scored. To confirm
+  the committed record still matches its source: `npx tsx
+  scripts/exportEvaluationSnapshot.ts --check eval-2026-09-24.db
+  src/lib/evaluation/recorded/live-2026-09-24.json`.
 - **`npm run test:e2e`'s `runAnalysis.spec.ts` is not a substitute for
   this.** It proves the pipeline's wiring, persistence, and UI rendering
   work end to end using a deterministic fixture provider tuned to one

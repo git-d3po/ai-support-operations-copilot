@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Deterministic regression smoke test for the foundation phase: every top
@@ -249,17 +249,57 @@ test("AI Operations page renders real, database-backed ticket volume", async ({ 
   await expect(page.getByText("Ticket volume by status")).toBeVisible();
 });
 
-test("Evaluations page lists all 11 curated scenarios", async ({ page }) => {
+/** The recorded 2026-09-24 live evaluation's table, named by its section heading. */
+const recordedTable = (page: Page) => page.getByRole("table", { name: /^Recorded live evaluation · 24 Sep 2026$/ });
+
+test("Evaluations shows the recorded 2026-09-24 live evaluation as a dated, fixed record of all 11 scenarios", async ({ page }) => {
   await page.goto("/evaluations");
-  await expect(page.getByRole("heading", { name: "Evaluations" })).toBeVisible();
-  const rows = page.locator("tbody tr");
+  await expect(page.getByRole("heading", { level: 1, name: "Evaluations" })).toBeVisible();
+  const recorded = page.getByRole("region", { name: /^Recorded live evaluation · 24 Sep 2026$/ });
+  await expect(recorded.getByRole("heading", { name: "Recorded live evaluation · 24 Sep 2026" })).toBeVisible();
+
+  // Provenance: when, against which commit, with real model calls, and that it does not measure this deployment.
+  await expect(recorded.getByText(/recorded on 24 Sep 2026, 19:18–19:21 UTC, against commit 0a12bb9/)).toBeVisible();
+  await expect(recorded.getByText(/with real model calls \(Anthropic\)/)).toBeVisible();
+  await expect(recorded.getByText(/It is not re-run here and does not measure this deployment\. Demo Mode never calls a model\./)).toBeVisible();
+  // The summary, with the cost labelled as an estimate, and the limits.
+  await expect(
+    recorded.getByText(
+      "11 of 11 passed (overall score ≥ 0.85) · 39 agent steps, 1 failed validation after a retry · estimated model cost $0.21",
+    ),
+  ).toBeVisible();
+  await expect(recorded.getByText(/not a guaranteed accuracy rate\. Four scenarios passed with a mismatch or a degraded agent/)).toBeVisible();
+  await expect(recorded.getByText(/Changes made after this run \(29fd3c0\) were not measured live\./)).toBeVisible();
+
+  // All 11 scenarios, every one with its recorded pass and score.
+  const rows = recordedTable(page).locator("tbody tr");
   await expect(rows).toHaveCount(11);
+  await expect(recordedTable(page).locator("tbody tr td:nth-child(6)").getByText(/^Pass \(\d\.\d\d\)$/)).toHaveCount(11);
+
+  // The four imperfect passes say why, from the recorded data.
+  const result = (key: string) => rows.filter({ hasText: key }).locator("td").nth(5);
+  await expect(result("prohibited-refund")).toContainText("Pass (0.94)");
+  await expect(result("prohibited-refund")).toContainText(
+    "Billing Agent output failed validation twice and was degraded; the denial came from the Policy agent.",
+  );
+  await expect(result("multi-domain")).toContainText("Intent: expected Billing question, got Duplicate charge.");
+  await expect(result("failed-payment")).toContainText("Specialists: expected Billing, got Billing, Technical.");
+  await expect(result("technical-escalation")).toContainText("Specialists: expected Technical, Risk, got Technical.");
+  await expect(result("duplicate-billing")).toHaveText("Pass (1.00)");
 });
 
-test("Evaluations distinguishes Demo Mode from historical live results and never presents demo replays as a score", async ({ page }) => {
+test("Evaluations keeps this deployment's own state separate: in Demo Mode nothing has been evaluated here", async ({ page }) => {
   await page.goto("/evaluations");
-  await expect(page.getByText(/no historical live results are included in this Demo Mode deployment/)).toBeVisible();
-  await expect(page.getByText(/scripted replays and are never evaluation results/)).toBeVisible();
+  const deployment = page.getByRole("region", { name: "This deployment" });
+  await expect(
+    deployment.getByText(
+      "No evaluation has been run in this deployment. Evaluations require real model calls, which Demo Mode never makes; demo analyses are scripted replays and are never scored.",
+    ),
+  ).toBeVisible();
+  // No table of "Not run" rows, anywhere on the page.
+  await expect(deployment.getByRole("table")).toHaveCount(0);
+  await expect(page.getByText("Not run", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(1);
 });
 
 test("Knowledge page lists seeded policies and product docs, with their text", async ({ page }) => {
@@ -274,19 +314,25 @@ test("Knowledge page lists seeded policies and product docs, with their text", a
   await expect(refund.locator("ol > li")).toHaveCount(4);
 });
 
-test("the Evaluations table has one cell per column in every row, with readable labels", async ({ page }) => {
+test("the recorded Evaluations table has one cell per column in every row, with readable labels", async ({ page }) => {
   await page.goto("/evaluations");
-  const headers = page.locator("thead th");
-  await expect(headers).toHaveText(["Scenario", "Ticket", "Expected", "Actual", "Dimensions", "Result"]);
-  const counts = await page.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.children.length));
+  const table = recordedTable(page);
+  await expect(table.locator("thead th")).toHaveText(["Scenario", "Ticket", "Expected", "Actual", "Dimensions", "Result"]);
+  const counts = await table.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.children.length));
   expect(counts).toEqual(Array(11).fill(6));
 
-  const row = page.locator("tbody tr").filter({ hasText: "duplicate-billing" });
-  await expect(row.locator("td").nth(1).getByRole("link", { name: "Charged twice this billing cycle" })).toBeVisible();
+  const row = table.locator("tbody tr").filter({ hasText: "duplicate-billing" });
+  // The recorded subject is plain historical text: nothing in the historical record links to this
+  // deployment's current ticket, which is not the ticket state the run evaluated.
+  await expect(row.locator("td").nth(1)).toHaveText("Charged twice this billing cycle");
+  await expect(table.getByRole("link")).toHaveCount(0);
   await expect(row.locator("td").nth(2)).toContainText("Duplicate charge");
   await expect(row.locator("td").nth(2)).toContainText("Refund customer");
   await expect(row.locator("td").nth(2)).not.toContainText("duplicate_charge");
-  await expect(row.locator("td").nth(5)).toHaveText("Not run");
+  // The recorded actual outcome, in the same vocabulary.
+  await expect(row.locator("td").nth(3)).toContainText("Billing, Policy, Response");
+  await expect(row.locator("td").nth(3)).toContainText("Refund customer");
+  await expect(row.locator("td").nth(4)).toContainText("✓ Policy");
 });
 
 test("every page names itself in the document title", async ({ page }) => {

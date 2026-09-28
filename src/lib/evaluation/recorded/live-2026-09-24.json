@@ -1,0 +1,501 @@
+{
+  "schemaVersion": 1,
+  "id": "live-2026-09-24",
+  "recordedAt": {
+    "start": "2026-09-24T19:18:20.658Z",
+    "end": "2026-09-24T19:20:59.262Z"
+  },
+  "codeCommit": "0a12bb9",
+  "source": {
+    "database": "eval-2026-09-24.db",
+    "sha256": "fe390b73aa58eb580b3711288a424911ad8bbdf7fac46bbc9501a94e73e5d19f",
+    "records": "EvaluationResult"
+  },
+  "passThreshold": 0.85,
+  "routing": [
+    {
+      "step": "classifier",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "step": "billing",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "step": "policy",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "step": "technical",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5"
+    },
+    {
+      "step": "risk",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5"
+    },
+    {
+      "step": "response",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5"
+    }
+  ],
+  "totals": {
+    "scenarios": 11,
+    "passed": 11,
+    "agentSteps": 39,
+    "failedAgentSteps": 1,
+    "inputTokens": 36465,
+    "outputTokens": 14295,
+    "estimatedCostUsd": 0.21283
+  },
+  "scenarios": [
+    {
+      "scenarioKey": "ambiguous-request",
+      "ticketSubject": "question",
+      "expected": {
+        "expectedIntent": "general_inquiry",
+        "expectedAgents": [
+          "response"
+        ],
+        "expectedPolicySlug": null,
+        "expectedEscalation": false,
+        "expectedAction": "reply_and_monitor",
+        "notes": "No specific product area, account issue, or prior ticket reference — the correct move is a clarifying question, not a specialist investigation."
+      },
+      "actual": {
+        "intent": "general_inquiry",
+        "agents": [
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "reply_and_monitor",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": null,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx00du0003unr6onea8ga9"
+    },
+    {
+      "scenarioKey": "duplicate-billing",
+      "ticketSubject": "Charged twice this billing cycle",
+      "expected": {
+        "expectedIntent": "duplicate_charge",
+        "expectedAgents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "expectedPolicySlug": "duplicate-charge-policy",
+        "expectedEscalation": false,
+        "expectedAction": "refund_customer",
+        "notes": "Two same-amount charges on one invoice within 48 hours — confirmed duplicate, fast-path refund."
+      },
+      "actual": {
+        "intent": "duplicate_charge",
+        "agents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "refund_customer",
+        "policySlug": "duplicate-charge-policy"
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx0dnd0009unr6v8v1ix7r"
+    },
+    {
+      "scenarioKey": "failed-payment",
+      "ticketSubject": "Payment failed — updated my card, please retry",
+      "expected": {
+        "expectedIntent": "failed_payment",
+        "expectedAgents": [
+          "billing",
+          "response"
+        ],
+        "expectedPolicySlug": null,
+        "expectedEscalation": false,
+        "expectedAction": "reply_and_monitor",
+        "notes": "Card already updated by the customer; next retry is automatic, so the right action is to confirm and monitor, not to take a manual billing action."
+      },
+      "actual": {
+        "intent": "failed_payment",
+        "agents": [
+          "billing",
+          "technical",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "reply_and_monitor",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": false,
+        "policyCorrect": null,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 0.8571428571428571,
+        "notes": "agents: expected [billing], got [billing, technical]"
+      },
+      "passed": true,
+      "sourceResultId": "cmufx0opc000funr6n5mh0adf"
+    },
+    {
+      "scenarioKey": "known-technical-issue",
+      "ticketSubject": "Automations stopped firing right after our upgrade",
+      "expected": {
+        "expectedIntent": "technical_issue",
+        "expectedAgents": [
+          "technical",
+          "response"
+        ],
+        "expectedPolicySlug": null,
+        "expectedEscalation": false,
+        "expectedAction": "reply_and_close",
+        "notes": "Board size (~2,500 cards) matches the known automation-timeout issue (ENG-4821); the documented workaround (split the board) applies and hasn't been tried yet."
+      },
+      "actual": {
+        "intent": "technical_issue",
+        "agents": [
+          "technical",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "reply_and_close",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": null,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx0xk1000kunr6evgmqdcf"
+    },
+    {
+      "scenarioKey": "legitimate-refund",
+      "ticketSubject": "Refund request — upgraded by mistake",
+      "expected": {
+        "expectedIntent": "refund_request",
+        "expectedAgents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "expectedPolicySlug": "refund-policy",
+        "expectedEscalation": false,
+        "expectedAction": "refund_customer",
+        "notes": "Charge occurred 5 days ago with no usage since — squarely inside the refund window."
+      },
+      "actual": {
+        "intent": "refund_request",
+        "agents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "refund_customer",
+        "policySlug": "refund-policy"
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx18tt000qunr6d0hsh9og"
+    },
+    {
+      "scenarioKey": "multi-domain",
+      "ticketSubject": "Double charged on upgrade, and automations broke at the same time",
+      "expected": {
+        "expectedIntent": "billing_question",
+        "expectedAgents": [
+          "billing",
+          "policy",
+          "technical",
+          "response"
+        ],
+        "expectedPolicySlug": "duplicate-charge-policy",
+        "expectedEscalation": false,
+        "expectedAction": "refund_customer",
+        "notes": "Two independent, resolvable issues from one upgrade: a confirmed duplicate proration charge (fast-path refund) and an automation issue needing the standard technical workaround. Neither requires escalation on its own."
+      },
+      "actual": {
+        "intent": "duplicate_charge",
+        "agents": [
+          "billing",
+          "policy",
+          "technical",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "refund_customer",
+        "policySlug": "duplicate-charge-policy"
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": false,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 0.8823529411764706,
+        "notes": "intent: expected billing_question, got duplicate_charge"
+      },
+      "passed": true,
+      "sourceResultId": "cmufx1xr3000xunr63w1wiips"
+    },
+    {
+      "scenarioKey": "out-of-window-refund",
+      "ticketSubject": "Refund request for annual subscription charge",
+      "expected": {
+        "expectedIntent": "refund_request",
+        "expectedAgents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "expectedPolicySlug": "refund-policy",
+        "expectedEscalation": true,
+        "expectedAction": "escalate",
+        "notes": "A refund request for an ordinary subscription charge 45 days old. It is outside Refund Policy condition 1 (14 days) and well under the 90-day mark on either reading of the policy's exception, so the direct-denial exception does not apply. It is not a duplicate (condition 2), not usage-based (condition 3), and mentions no downgrade (condition 4), so it falls under the catch-all: outside these conditions, the request requires Billing Ops approval and is marked requires_review rather than auto-denied. resolveOutcome() maps a requires_review Policy decision to an escalation to billing_ops. This is the end-to-end coverage of that path; the condition-4 and over-90-day cases are deliberately not represented (see DECISIONS.md)."
+      },
+      "actual": {
+        "intent": "refund_request",
+        "agents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "escalated": true,
+        "escalationTeam": "billing_ops",
+        "action": "escalate",
+        "policySlug": "refund-policy"
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx2ahw0013unr6ozdc8v26"
+    },
+    {
+      "scenarioKey": "password-reset",
+      "ticketSubject": "Forgot my password — can't log in",
+      "expected": {
+        "expectedIntent": "password_reset",
+        "expectedAgents": [
+          "technical",
+          "response"
+        ],
+        "expectedPolicySlug": null,
+        "expectedEscalation": false,
+        "expectedAction": "auto_resolve",
+        "notes": "No security flags on the account; standard reset flow applies per Account Security Policy."
+      },
+      "actual": {
+        "intent": "password_reset",
+        "agents": [
+          "technical",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "auto_resolve",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": null,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx2gjx0018unr6w7qsun5y"
+    },
+    {
+      "scenarioKey": "prohibited-refund",
+      "ticketSubject": "Refund request for API overage charges",
+      "expected": {
+        "expectedIntent": "refund_request",
+        "expectedAgents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "expectedPolicySlug": "refund-policy",
+        "expectedEscalation": false,
+        "expectedAction": "deny_request",
+        "notes": "Refund Policy condition 3 makes usage-based charges (API overages) non-refundable once the usage has occurred, and the customer acknowledges the usage occurred (their own batch job). The charge is 21 days old, so the 14-day refund condition, which covers subscription charges, does not compete. Because the request falls squarely under condition 3 it is not merely an 'outside these conditions' request, so the ambiguous catch-all / requires_review path does not determine the outcome. The charge is marked reason \"api_overage\" so the Billing and Policy agents see it as structured data."
+      },
+      "actual": {
+        "intent": "refund_request",
+        "agents": [
+          "billing",
+          "policy",
+          "response"
+        ],
+        "escalated": false,
+        "escalationTeam": null,
+        "action": "deny_request",
+        "policySlug": "refund-policy"
+      },
+      "failedAgents": [
+        "billing"
+      ],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 0.5,
+        "overallScore": 0.9411764705882353,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx304p001eunr6k8b1cmsp"
+    },
+    {
+      "scenarioKey": "suspicious-activity",
+      "ticketSubject": "Unrecognized login and API key on our account",
+      "expected": {
+        "expectedIntent": "account_security",
+        "expectedAgents": [
+          "risk",
+          "response"
+        ],
+        "expectedPolicySlug": "account-security-policy",
+        "expectedEscalation": true,
+        "expectedAction": "escalate",
+        "notes": "Suspected account compromise must always escalate to Trust & Safety per Account Security Policy — support should not attempt direct resolution."
+      },
+      "actual": {
+        "intent": "account_security",
+        "agents": [
+          "risk",
+          "response"
+        ],
+        "escalated": true,
+        "escalationTeam": "trust_and_safety",
+        "action": "escalate",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": true,
+        "policyCorrect": true,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 1,
+        "notes": "All scored dimensions matched the expected outcome."
+      },
+      "passed": true,
+      "sourceResultId": "cmufx37yy001junr67p3pvqs2"
+    },
+    {
+      "scenarioKey": "technical-escalation",
+      "ticketSubject": "Automations still broken after splitting the board like support suggested",
+      "expected": {
+        "expectedIntent": "technical_issue",
+        "expectedAgents": [
+          "technical",
+          "risk",
+          "response"
+        ],
+        "expectedPolicySlug": null,
+        "expectedEscalation": true,
+        "expectedAction": "escalate",
+        "notes": "Documented workaround already attempted and failed — per Escalation Policy this goes to Engineering with the board evidence, not back through the same workaround."
+      },
+      "actual": {
+        "intent": "technical_issue",
+        "agents": [
+          "technical",
+          "response"
+        ],
+        "escalated": true,
+        "escalationTeam": "engineering",
+        "action": "escalate",
+        "policySlug": null
+      },
+      "failedAgents": [],
+      "scores": {
+        "classificationCorrect": true,
+        "routingCorrect": false,
+        "policyCorrect": null,
+        "escalationCorrect": true,
+        "resolutionCorrect": true,
+        "evidenceQuality": 1,
+        "overallScore": 0.8571428571428571,
+        "notes": "agents: expected [technical, risk], got [technical]"
+      },
+      "passed": true,
+      "sourceResultId": "cmufx3eri001ounr6vnceroj5"
+    }
+  ]
+}

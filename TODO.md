@@ -10,9 +10,10 @@ DECISIONS.md. This is what's left.
   fixed sidebar leaves 166px for content and the ticket's context panel overlaps the
   title (horizontal scroll). A minimal fallback (sidebar to a top bar, ticket page to one
   column below `md`) would remove that; it needs a product decision to reverse the scope.
-- **Evaluations in Demo Mode** (Audit #10). The public demo shows every scenario as "Not
-  run". Whether to show a dated, clearly labelled snapshot of the real results is a product
-  decision; nothing is shown that was not measured.
+- **Evaluations in Demo Mode** (Audit #10): **resolved.** The Evaluations page shows the
+  2026-09-24 live run as a dated, committed record, separate from the deployment's own
+  evaluation state (DECISIONS.md, "Recorded live evaluation shipped as a verified
+  snapshot"). A future live run gets its own record; this one is never edited.
 
 - **Live evaluation: open questions from the 2026-09-24 baseline.** The first
   real evaluation passes ran on 2026-09-19/20 (historical results preserved in

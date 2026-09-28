@@ -3028,3 +3028,55 @@ overflow; no overlap; tables scroll inside their box). Playwright
 the compact navigation reaches every destination with `aria-current`, keyboard
 focus and named lists, ticket detail stacks without overlap, wide tables stay
 contained, and the desktop sidebar and two-column ticket layout are unchanged.
+
+## 2026-09-24 — Recorded live evaluation shipped as a verified snapshot
+
+**Context:** The public Demo Mode deployment seeds a fresh database on every start and
+never calls a model, so its Evaluations page showed 11 scenarios as "Not run", while
+the project's real evidence, the 2026-09-24 live run (11/11 passed; "Live evaluation
+refresh on a separate database"), sat in a local, gitignored SQLite file. The page read
+as an unfinished feature while understating what had been measured.
+
+**Decision made:** Ship that run as a fixed, committed record and show it as history,
+never as the deployment's state.
+- **Record.** `src/lib/evaluation/recorded/live-2026-09-24.json`, schema version 1: run
+  provenance (the results' recording window, the evaluated commit `0a12bb9`, the source
+  file's name and SHA-256, the pass threshold at that commit, the observed routing,
+  totals) and one entry per scenario (expected outcome, actual intent, agents,
+  escalation, action and policy, degraded steps by key, the scorer's stored scores and
+  pass, the source result id). No customer data, message or draft text, finding text,
+  raw error, path, run or invocation id, or per-step latency or cost. `0a12bb9` is
+  documented provenance (this log), not a database field; there is no evaluation-run
+  entity, so the record states that it aggregates the 11 `EvaluationResult` rows.
+- **Contract.** `recordedEvaluationContract.ts` composes the evaluation system's own
+  schemas (`EvaluationExpectedOutcomeSchema`, `EvaluationResultSchema`, the shared
+  vocabularies) in a strict envelope, so an unexpected field is rejected rather than
+  published; a simulated provider is rejected too. `recordedEvaluation.ts` parses the
+  committed file when the module loads (a malformed record fails the build and the
+  tests) and freezes it. The application never opens an evaluation database.
+- **Export and verification.** `scripts/exportEvaluationSnapshot.ts` accepts only a
+  source whose SHA-256 it knows, reads a temporary copy opened read-only, confirms the
+  original is unchanged, and refuses anything that is not exactly one completed,
+  non-simulated, real-provider result per current scenario with consistent pass
+  decisions. It reads the pass threshold from the evaluated commit's runner. It never
+  runs an evaluation, the scorer or a model. Output is deterministic (fixed key order,
+  sorted scenarios, 2-space JSON), so `--check` compares bytes. It needs the local
+  source file and git history, so it is maintainer tooling, not part of CI; the unit
+  tests check the committed record's own consistency and its agreement with `SCENARIOS`.
+- **Page.** "Recorded live evaluation · 24 Sep 2026" first: provenance (real model
+  calls, the time window in UTC, the commit, "does not measure this deployment"), the
+  summary (39 agent steps, 1 failed validation after a retry, estimated model cost),
+  its limits (a single run, not an accuracy rate; four imperfect passes, each with a
+  note built from the recorded data; `29fd3c0` not measured live), and the table.
+  Below it, "This deployment": the deployment's own evaluation state, unchanged in
+  behaviour except that in Demo Mode with nothing scored it is one statement instead of
+  11 "Not run" rows. The two are never merged or counted together, and demo analyses
+  are never scored.
+
+**Deliberately not changed:** the scorer, runner, threshold, scenarios, schemas, Demo
+Mode, routing, prompts and every database. The historical result is shown as it
+happened: `prohibited-refund` (0.94, Billing degraded, the denial from Policy) is not
+re-scored for the later `29fd3c0` fix, which is stated as a later change instead. The
+2026-09-20 `eval.db` baseline (two batches, 10 scenarios, older code) stays
+documentation-only. A future live run is a new record beside this one, added
+deliberately (with its source's checksum in the exporter); this record is never edited.

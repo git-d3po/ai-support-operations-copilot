@@ -379,6 +379,8 @@ explicitly asked for first). Live runs have since been made: the historical
 2026-09-20 results remain preserved in the local `eval.db`, and the current
 live baseline, a single run of all 11 scenarios on 2026-09-24, is stored
 separately in the local `eval-2026-09-24.db` (see EVALUATION.md, "Current
-status"). The public Demo Mode deployment includes neither, so its
-Evaluations page shows "Not run" rather than a fabricated score. UI visual polish, editable model routing
+status"). Neither database is part of the deployment: the 2026-09-24 run is
+shipped as a committed, verified record and shown on the Evaluations page as a
+dated historical run, separate from the deployment's own (in Demo Mode, empty)
+evaluation state. UI visual polish, editable model routing
 from Settings, and Inbox filtering/pagination also remain deferred.
