@@ -11,7 +11,8 @@ import { expect, test, type Page } from "@playwright/test";
  * honestly labeled as a simulated demo replay; replay is idempotent (one demo
  * run per ticket); the run is excluded from AI Operations' real metrics; a
  * second, different scenario works (the recordings are not one ticket's answer
- * for everyone); and an uncurated ticket cannot run at all. Not a claim about
+ * for everyone); the recommendation names the policy the analysis cited, and
+ * only when one was cited; and an uncurated ticket cannot run at all. Not a claim about
  * model quality; see EVALUATION.md. See DECISIONS.md ("Public Demo Mode").
  *
  * Tests in this file share one database and build on each other, so they run in
@@ -59,6 +60,15 @@ test("running demo analysis on the duplicate-billing ticket produces a persisted
   await expect(recommendation.getByText("Refund customer", { exact: true })).toBeVisible();
   await expect(page.getByText("Escalation")).toHaveCount(0);
 
+  // The policy the analysis cited is part of the answer, not only of the trace: a fact in the recommendation's
+  // own list, linking to the policy's Knowledge entry by its human-readable title.
+  const policyCited = recommendation.getByText("Policy cited", { exact: true }).locator("xpath=following-sibling::dd");
+  await expect(policyCited.getByRole("link")).toHaveCount(1);
+  await expect(policyCited.getByRole("link", { name: "Duplicate Charge Policy" })).toHaveAttribute(
+    "href",
+    "/knowledge#policy-duplicate-charge-policy",
+  );
+
   // The operator's deliverable follows, and is honestly a draft: nothing was sent or executed.
   const draft = page.getByRole("region", { name: "Draft reply" });
   await expect(draft).toBeVisible();
@@ -96,8 +106,9 @@ test("running demo analysis on the duplicate-billing ticket produces a persisted
   // No raw taxonomy identifier anywhere on the page, including the opened trace.
   await expect(page.getByText(RAW_TAXONOMY_IDENTIFIER)).toHaveCount(0);
 
-  // The policy citation is a real link to that policy's Knowledge entry.
-  const citation = page.getByRole("link", { name: "Duplicate Charge Policy" });
+  // The trace keeps its own citation on the Policy Agent's step, a real link to that policy's Knowledge entry.
+  // (Scoped to the trace: the recommendation above now links to the same policy.)
+  const citation = page.getByRole("region", { name: "How this was decided" }).getByRole("link", { name: "Duplicate Charge Policy" });
   await expect(citation).toHaveAttribute("href", "/knowledge#policy-duplicate-charge-policy");
   await citation.click();
   await expect(page).toHaveURL(/\/knowledge#policy-duplicate-charge-policy$/);
@@ -170,6 +181,10 @@ test("a second, different scenario works: suspicious-activity routes to Risk and
   await expect(recommendation.getByText("Trust & Safety", { exact: true })).toBeVisible();
   await expect(recommendation.getByText("Critical", { exact: true })).toBeVisible();
   await expect(recommendation.getByText("Human review required", { exact: true })).toBeVisible();
+  // The policy the Risk agent cited is named with the decision.
+  await expect(
+    recommendation.getByText("Policy cited", { exact: true }).locator("xpath=following-sibling::dd").getByRole("link"),
+  ).toHaveText(["Account Security Policy"]);
 
   // Routed to Risk only, visible in the pipeline and in the opened trace.
   await expect(page.getByRole("list", { name: "Decision pipeline" }).getByText("Risk", { exact: true })).toBeVisible();
@@ -209,9 +224,12 @@ test("an uncurated ticket cannot run in Demo Mode", async ({ page }) => {
 
   const unavailable = page.getByRole("button", { name: "Run demo analysis" });
   await expect(unavailable).toBeDisabled();
-  await expect(page.getByText("Demo Mode is available for the curated evaluation scenarios only.")).toBeVisible();
+  // Why it cannot run, and where the tickets that can are. (Page copy: the server's own refusal message,
+  // DEMO_CURATED_ONLY_MESSAGE, is unchanged and asserted by the unit and integration tests.)
+  const reason = "In Demo Mode, only the curated tickets tagged \u201Ceval:\u201D in the Inbox can be analyzed.";
+  await expect(page.getByText(reason, { exact: true })).toBeVisible();
   // The reason is attached to the button itself, so assistive technology reads it with the control.
-  await expect(unavailable).toHaveAccessibleDescription("Demo Mode is available for the curated evaluation scenarios only.");
+  await expect(unavailable).toHaveAccessibleDescription(reason);
   await expect(page.getByText("No AI analysis has been run on this ticket yet.")).toBeVisible();
   await expect(page.getByText("SIMULATED RUN", { exact: false })).toHaveCount(0);
 
@@ -239,4 +257,24 @@ test("demo analyses never become evaluation results: the recorded run and this d
   const deployment = page.getByRole("region", { name: "This deployment" });
   await expect(deployment.getByText(/^No evaluation has been run in this deployment\./)).toBeVisible();
   await expect(deployment.getByRole("table")).toHaveCount(0);
+});
+
+test("with no policy cited, the recommendation has no policy fact rather than a placeholder", async ({ page }) => {
+  // Last in this file, so the run counts asserted above are unaffected by this third demo run.
+  // technical-escalation: Risk runs with policies available to it (the escalation and account-security
+  // policies among them) and cites none; the escalation rests on the Technical finding.
+  await openTicket(page, "Automations still broken after splitting the board like support suggested");
+  await page.getByRole("button", { name: "Run demo analysis" }).click();
+  await expect(page.getByRole("button", { name: "Run demo analysis again" })).toBeVisible({ timeout: 15_000 });
+
+  const recommendation = page.getByRole("region", { name: "Recommendation" });
+  await expect(recommendation.getByText("Escalate to Engineering", { exact: true })).toBeVisible();
+  await expect(recommendation.getByText(/^Polic(y|ies) cited$/)).toHaveCount(0);
+  await expect(recommendation.getByRole("link")).toHaveCount(0);
+  await expect(recommendation.getByText(/^(None|N\/A|No policy)$/)).toHaveCount(0);
+
+  // The trace agrees: the Risk agent ran and cited nothing.
+  await expandAgentTrace(page, 4);
+  await expect(page.getByText("Risk / Escalation Agent")).toBeVisible();
+  await expect(page.getByRole("region", { name: "How this was decided" }).getByText("Cites")).toHaveCount(0);
 });

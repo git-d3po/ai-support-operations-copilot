@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { getAiMode } from "@/lib/ai/mode";
 import { DEMO_PROVIDER_KEY, isSimulatedProvider } from "@/lib/ai/providers/provenance";
-import { DEMO_CURATED_ONLY_MESSAGE, hasDemoRecording } from "@/lib/demo/recordings";
+import { citedPolicies } from "@/lib/ai/citedPolicies";
+import { hasDemoRecording } from "@/lib/demo/recordings";
 import { formatCents, formatDate, formatDateTime } from "@/lib/format";
 import {
   labelAccountPlan,
@@ -46,6 +47,13 @@ import {
 } from "@/lib/ai/schemas";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Why the action is unavailable on a ticket without a scripted recording in Demo
+ * Mode, and where the runnable ones are (the Inbox's "eval:" tags). Page copy
+ * only: the server's own refusal, DEMO_CURATED_ONLY_MESSAGE, is unchanged.
+ */
+const DEMO_NOT_RUNNABLE_REASON = "In Demo Mode, only the curated tickets tagged \u201Ceval:\u201D in the Inbox can be analyzed.";
 
 /** The ticket's subject names the tab; an unknown id gets the not-found state's title, like the page itself. */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -105,7 +113,7 @@ export default async function TicketDetailPage({
   // (anything outside the curated scenarios) cannot be analyzed in Demo Mode,
   // and the action refuses it too; this only makes that visible up front.
   const demoMode = getAiMode() === "demo";
-  const demoDisabledReason = demoMode && !hasDemoRecording(ticket.scenarioKey) ? DEMO_CURATED_ONLY_MESSAGE : null;
+  const demoDisabledReason = demoMode && !hasDemoRecording(ticket.scenarioKey) ? DEMO_NOT_RUNNABLE_REASON : null;
   const isDemoRun = latestRun?.agentInvocations.some((inv) => inv.provider === DEMO_PROVIDER_KEY) ?? false;
 
   // Two columns from `lg`: the ticket and its analysis beside the customer/account context (a little narrower
@@ -190,6 +198,8 @@ export default async function TicketDetailPage({
               <RecommendationPanel
                 resolution={latestRun.resolution as unknown as ResolutionDecision | null}
                 escalation={latestRun.escalation as unknown as EscalationDecision | null}
+                citations={citedPolicies(latestRun.agentInvocations)}
+                knownPolicySlugs={knownPolicySlugs}
               />
 
               <DraftReply
@@ -297,13 +307,23 @@ const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim();
  * one raised surface on the page (the `surface` fill plus the reserved
  * `shadow-sm`). When the escalation reason is the same text as the resolution
  * summary (resolve.ts often uses one value for both), it is shown once.
+ *
+ * "Policy cited" names the policies the Policy and Risk agents cited in this run
+ * (citedPolicies.ts), so the grounding is visible without opening the trace. It
+ * says "cited", not "decided by": a cited policy informed the analysis, but the
+ * deciding resolution rule may be another. With no citation the fact is omitted,
+ * never shown as "None".
  */
 function RecommendationPanel({
   resolution,
   escalation,
+  citations,
+  knownPolicySlugs,
 }: {
   resolution: ResolutionDecision | null;
   escalation: EscalationDecision | null;
+  citations: PolicyReference[];
+  knownPolicySlugs: Set<string>;
 }) {
   if (!resolution) return null;
 
@@ -339,6 +359,16 @@ function RecommendationPanel({
         <Fact label="Confidence">
           <span className="tabular-nums">{resolution.confidence.toFixed(2)}</span>
         </Fact>
+        {citations.length > 0 && (
+          <Fact label={citations.length === 1 ? "Policy cited" : "Policies cited"}>
+            {citations.map((ref, i) => (
+              <span key={ref.slug}>
+                {i > 0 && ", "}
+                <PolicyCitation reference={ref} known={knownPolicySlugs.has(ref.slug)} />
+              </span>
+            ))}
+          </Fact>
+        )}
       </dl>
 
       <p className="mt-3 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{resolution.summary}</p>

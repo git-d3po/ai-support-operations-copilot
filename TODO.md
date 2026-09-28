@@ -95,6 +95,9 @@ DECISIONS.md. This is what's left.
   only the "Not sent" badge. Consider a mode-independent note (AUDIT.md Audit #10).
 - Ticket page: provenance is stated four times (banner, SIMULATED RUN notice, draft
   note, per-step badges); consider consolidating without weakening it.
+- Ticket page: the account-security invariant's recommendation text names the policy by slug
+  ("Per account-security-policy: …", from `resolve.ts`, persisted in the run). The Recommendation's
+  "Policy cited" fact now shows the title beside it; rewording the text is an orchestration change.
 - Navigation naming: the "Operations" group (Inbox) vs the "Operations" item (AI
   Operations); single-item groups; page h1s that differ from nav labels.
 - Agent naming: "Classification" beside "Billing Agent", "Response Agent", etc.
@@ -160,6 +163,14 @@ DECISIONS.md. This is what's left.
 - **Seed realism** (Audit #10): faker honorifics and domains ("Miss …", "memorable-pile.net"),
   multi-surname companies, Urgent priority on feature questions. A deliberate data pass,
   since it changes deterministic fixtures.
+  **Timestamps** (audit P1-4, downgraded to P2 on 2026-09-27) belong to the same pass: every
+  seeded time is 12:00:00 UTC (the anchor minus whole days), and `src/lib/format.ts` renders it
+  in the server's timezone with no zone label (5:00 AM in PDT, 12:00 PM on a UTC host), so every
+  row shows the same time. A display timezone alone cannot fix that uniformity. Changing seed
+  times shifts the seeded RNG stream (every background record) and the request-time and
+  duplicate-charge inputs the recorded evidence was measured against ("0 hours apart", DES-48),
+  so it waits for this deliberate pass: e.g. a labeled display timezone, plus time-of-day offsets
+  for background tickets only, from a separate RNG stream.
 - Remove the unused default Next.js `public/*.svg` assets once the UI
   phase replaces them with real assets (or confirms none are needed).
 

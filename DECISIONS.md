@@ -3080,3 +3080,51 @@ re-scored for the later `29fd3c0` fix, which is stated as a later change instead
 2026-09-20 `eval.db` baseline (two batches, 10 scenarios, older code) stays
 documentation-only. A future live run is a new record beside this one, added
 deliberately (with its source's checksum in the exporter); this record is never edited.
+
+## 2026-09-27 — Product comprehension: cited policies, runnable demo tickets, accurate Knowledge copy
+
+**Context:** A read-only audit at `ee54f59` kept three comprehension items at P1. (P1-2) The
+policy behind a decision was named only inside the collapsed agent trace. (P1-3) Nothing on
+the Inbox said which tickets Demo Mode can analyze. The only marker was the "eval:" badge,
+which reads as evaluation metadata and is off-screen at 390px. A ticket that can't be run said only
+"Demo Mode is available for the curated evaluation scenarios only." (P1-5) The Knowledge
+subtitle said the specialist agents cite the policies *and product documentation*. It downgraded
+the fourth item (P1-4, seeded timestamps) to P2.
+
+**Decision made:**
+- **Policy cited (P1-2).** The Recommendation panel shows a "Policy cited" fact ("Policies cited"
+  for several) in its existing fact list, each policy linked to its Knowledge entry through the
+  existing `PolicyCitation`. `src/lib/ai/citedPolicies.ts` collects the citations from the
+  persisted findings of two agents only: the Policy Agent (its decision's `applicablePolicy`
+  first, then its `policyReferences`) and the Risk / Escalation Agent (`policyReferences`).
+  They are deduplicated by slug in a fixed order (Policy before Risk), not the steps' approximate
+  stored order. Billing and Technical findings are ignored even if one held a citation: neither
+  is shown a policy and both store none by contract ("Billing and Technical do not parse policy
+  citations"). Nothing is inferred from prose, and product documentation is never shown as a
+  citation. The label is "cited", not "decided by": a cited policy informed the analysis, but the
+  resolution rule that decided may be another (a Risk escalation can override a Policy decision).
+  With no citation the fact is omitted, never shown as "None", which would read as an uncited
+  decision. The trace's own "Cites" line is unchanged.
+- **Runnable demo tickets (P1-3).** In Demo Mode the Inbox lead adds one sentence: the curated
+  tickets tagged "eval:" can be analyzed as a scripted replay, and the others can be read but
+  not analyzed. Its count is computed from the database with `hasDemoRecording`, the check the
+  ticket page and the action use, across the whole table rather than the capped list. On a
+  ticket that can't be run, the button's disabled reason is now page copy: "In Demo Mode, only
+  the curated tickets tagged "eval:" in the Inbox can be analyzed." The server's refusal,
+  `DEMO_CURATED_ONLY_MESSAGE` (returned by the action, raised by the provider and stored as a
+  failed run's error), is unchanged. The wording matches AI Operations' existing pointer, and
+  no new provenance statement was added.
+- **Knowledge copy (P1-5).** The subtitle now says what each agent actually uses: the Policy
+  Agent and the Risk / Escalation Agent cite policies, and a cited policy links here. The
+  Technical Support Agent consults the relevant product documentation, which is not cited on
+  tickets. Billing, which works from the account's invoices and transactions, is no longer
+  implied to cite anything.
+- **Timestamps (P1-4)** are deferred to the Seed realism item in TODO.md. The uniform time comes
+  from the seed, not the display. Changing it touches deterministic fixtures and the inputs the
+  recorded evidence was measured against.
+
+**Not changed:** `resolve.ts`, agents, schemas and citation contracts, recordings, seed, scoring
+and evaluation, the recorded snapshot, `format.ts`, and every database. One existing e2e
+assertion was narrowed: the trace's citation link is now scoped to the trace, since the
+Recommendation links the same policy. The keyboard-order test now expects the Recommendation's
+policy link as the stop between the Run button and the agent trace.

@@ -19,8 +19,10 @@ export default async function KnowledgePage() {
     <div className="p-4 lg:p-6">
       <h1 className="text-lg font-semibold">Knowledge &amp; Policies</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        The policies and product documentation the specialist agents cite. A policy cited on a ticket links
-        to its entry here.
+        The company policies and product documentation used in ticket analysis. The Policy Agent and the Risk /
+        Escalation Agent cite policies, and a policy cited on a ticket links to its entry here. The Technical
+        Support Agent consults the product documentation relevant to a ticket; documentation is not cited on
+        tickets.
       </p>
 
       {/* Policies, then product documentation: side by side from tablet width, one after the other on a phone. */}

@@ -111,6 +111,10 @@ test("keyboard only: from the Inbox into a ticket, through its analysis and its 
   expect(actionPosts).toBe(1);
   await expect(page.getByRole("status").filter({ hasText: "Demo analysis complete." })).toBeAttached();
 
+  // In reading order, the next stop is the policy the recommendation cites, then the agent trace.
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("region", { name: "Recommendation" }).getByRole("link", { name: "Duplicate Charge Policy" })).toBeFocused();
+
   // The agent trace is a native disclosure, operable from the keyboard.
   await page.keyboard.press("Tab");
   await expect(page.getByText("Agent trace (4 steps)")).toBeFocused();
@@ -222,6 +226,17 @@ test("inbox lists the seeded tickets, including all 11 curated evaluation scenar
   await expect(page.getByText(/^eval: /)).toHaveCount(11);
 });
 
+test("in Demo Mode, the Inbox says which tickets can be analyzed, counting the curated tickets it tags", async ({ page }) => {
+  await page.goto("/inbox");
+  const lead = page.getByRole("main").locator("h1 + p");
+  const sentence =
+    /In Demo Mode, the (\d+) curated tickets? tagged \u201Ceval:\u201D can be analyzed as a scripted replay; the others can be read but not analyzed\./;
+  await expect(lead).toContainText(sentence);
+  // The number is counted from the database, and agrees with the "eval:" tags the Inbox shows.
+  const count = Number((await lead.textContent())!.match(sentence)![1]);
+  expect(count).toBe(await page.getByText(/^eval: /).count());
+});
+
 test("opening a curated ticket shows the customer, conversation, and account context", async ({ page }) => {
   // Uses a different ticket than runAnalysis.spec.ts (which runs AI
   // analysis on "Charged twice this billing cycle") so this test's
@@ -304,6 +319,12 @@ test("Evaluations keeps this deployment's own state separate: in Demo Mode nothi
 
 test("Knowledge page lists seeded policies and product docs, with their text", async ({ page }) => {
   await page.goto("/knowledge");
+  // The lead says which agents cite what: only Policy and Risk cite policies, and documentation is never cited.
+  await expect(page.getByRole("main").locator("h1 + p")).toHaveText(
+    "The company policies and product documentation used in ticket analysis. The Policy Agent and the Risk / " +
+      "Escalation Agent cite policies, and a policy cited on a ticket links to its entry here. The Technical Support " +
+      "Agent consults the product documentation relevant to a ticket; documentation is not cited on tickets.",
+  );
   // Headings, not text: each entry's body now appears too, and bodies mention other policies by name.
   await expect(page.getByRole("heading", { name: "Refund Policy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Known Issue: Automations Time Out on Large Boards" })).toBeVisible();

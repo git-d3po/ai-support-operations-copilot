@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { getAiMode } from "@/lib/ai/mode";
+import { hasDemoRecording } from "@/lib/demo/recordings";
 import { formatDate, formatTime } from "@/lib/format";
 import { labelChannel } from "@/lib/labels";
 import { Badge } from "@/components/ui/Badge";
@@ -13,15 +15,25 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Inbox" };
 
 export default async function InboxPage() {
-  const tickets = await db.ticket.findMany({
-    include: {
-      customer: true,
-      evaluationCase: true,
-      orchestrationRuns: { orderBy: { startedAt: "desc" }, take: 1 },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const demoMode = getAiMode() === "demo";
+  const [tickets, runnableInDemo] = await Promise.all([
+    db.ticket.findMany({
+      include: {
+        customer: true,
+        evaluationCase: true,
+        orchestrationRuns: { orderBy: { startedAt: "desc" }, take: 1 },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    // In Demo Mode, how many tickets can actually be analyzed: those with a scripted recording, counted
+    // across the whole table (not the capped list above), by the same check the ticket page and the action use.
+    demoMode
+      ? db.ticket
+          .findMany({ where: { scenarioKey: { not: null } }, select: { scenarioKey: true } })
+          .then((curated) => curated.filter((t) => hasDemoRecording(t.scenarioKey)).length)
+      : 0,
+  ]);
 
   return (
     <div className="p-4 lg:p-6">
@@ -29,6 +41,13 @@ export default async function InboxPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         {tickets.length} tickets. The AI recommendation comes from each ticket&apos;s latest
         analysis. It is a proposal: nothing is carried out automatically.
+        {runnableInDemo > 0 && (
+          <>
+            {" "}
+            In Demo Mode, the {runnableInDemo} curated {runnableInDemo === 1 ? "ticket" : "tickets"} tagged
+            &ldquo;eval:&rdquo; can be analyzed as a scripted replay; the others can be read but not analyzed.
+          </>
+        )}
       </p>
 
       <TableScroll className="mt-4">
