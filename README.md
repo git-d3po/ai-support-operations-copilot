@@ -130,8 +130,10 @@ See [EVALUATION.md](EVALUATION.md).
 - The live baseline is produced and kept **separately** from the app's demo database. It
   is written to its own evaluation database (by default `eval.db`, gitignored, or
   `EVAL_DATABASE_URL`), so re-seeding the development or demo database cannot destroy it.
-  The public demo's Evaluations page therefore states that no historical live results are
-  included.
+  The public demo's Evaluations page therefore shows the 2026-09-24 live run as a dated,
+  fixed record committed with the application (exported read-only from its evaluation
+  database; see EVALUATION.md, "Current status"), separately from the deployment's own
+  evaluation state, which in Demo Mode is empty.
 - `npm run eval` costs real money (a full run is on the order of $0.20) and needs a key,
   so run it deliberately, never in CI or automated tests.
 

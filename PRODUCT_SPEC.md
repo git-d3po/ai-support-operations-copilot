@@ -81,7 +81,10 @@ not a safe default.
   internal-tool persona (the support operator), not a customer-facing app.
 - A general-purpose agent framework — the orchestrator is purpose-built for
   this pipeline (see DECISIONS.md).
-- Mobile support — this is a dense, desktop-first operational tool.
+- A mobile-first design — this is a dense, desktop-first operational tool. Below 1024px the
+  layout adapts (a top navigation bar, a one-column ticket page, wide tables that scroll in
+  their own box) so every screen stays usable on a tablet or phone (DECISIONS.md,
+  "Responsive shell and consistent navigation labels").
 
 ## What "done" looks like for the foundation phase
 

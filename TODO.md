@@ -6,10 +6,11 @@ DECISIONS.md. This is what's left.
 
 ## Awaiting a decision from the user (not a defect — see AUDIT.md PM-5, Audit #4, Audit #5)
 
-- **Mobile layout** (AUDIT.md Audit #10). Listed below as not planned, but at 390px the
-  fixed sidebar leaves 166px for content and the ticket's context panel overlaps the
-  title (horizontal scroll). A minimal fallback (sidebar to a top bar, ticket page to one
-  column below `md`) would remove that; it needs a product decision to reverse the scope.
+- **Mobile layout** (AUDIT.md Audit #10): **resolved.** It was listed as not planned, but at
+  390px the fixed sidebar left 166px for content and the ticket's context panel overlapped the
+  title (horizontal scroll). The scope was reversed in `fdd9b75`: below `lg` the sidebar is a
+  top bar and ticket detail is one column (DECISIONS.md, "Responsive shell and consistent
+  navigation labels").
 - **Evaluations in Demo Mode** (Audit #10): **resolved.** The Evaluations page shows the
   2026-09-24 live run as a dated, committed record, separate from the deployment's own
   evaluation state (DECISIONS.md, "Recorded live evaluation shipped as a verified
@@ -178,5 +179,3 @@ DECISIONS.md. This is what's left.
 
 - Real payment processing, real email/chat delivery, multi-tenant auth —
   out of scope per PRODUCT_SPEC.md, "Non-goals."
-- Mobile-responsive layout — this is a desktop-first operational tool by
-  design.
