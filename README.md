@@ -37,6 +37,23 @@ quality, and it is never written to the evaluation results.
 for local and private use and is not what the public demo runs. The live evaluation is
 separate from Demo Mode: see [Evaluation](#evaluation).
 
+## Security & Demo Mode
+
+This is a **demonstration project** with **synthetic data only**.
+
+- The public demo cannot call a real LLM. It replays scripted responses.
+- No visitor input is accepted.
+- All customer data is fictional.
+- Do not enter real customer data into a local or live-mode deployment.
+- Keep `ANTHROPIC_API_KEY` and other secrets in `.env` or another secret manager; never commit them.
+
+**If you fork this for live mode:**
+
+- Treat ticket content as untrusted data and add explicit prompt/data delimiters before sending it to a live model.
+- Prompt injection is a known limitation that requires additional safeguards and testing.
+- Review authentication, authorization, rate limiting, logging, data retention, and human-approval controls before handling production data.
+- The application does not perform refunds, send emails, charge customers, or execute external actions; verify any future integrations independently.
+
 ## Local development
 
 ```bash
@@ -109,8 +126,8 @@ already holds real (non-simulated) results. It never touches `eval.db`.
 **Limitations:**
 - **Single instance.** The one-demo-run-per-ticket guarantee is enforced per server
   process, so do not use a multi-instance (Autoscale) deployment.
-- **SQLite and an ephemeral filesystem.** The database is a local file that is rebuilt on
-  every start. Demo runs are lost when the instance restarts, which is fine for a demo:
+- **SQLite and an ephemeral filesystem.** The database is a local file that is rebuilt
+  on every start. Demo runs are lost when the instance restarts, which is fine for a demo:
   they can be re-run.
 - `.replit` was written without access to Replit and is untested there. If a deployment
   misbehaves, check its module name, deployment type and port keys first.
