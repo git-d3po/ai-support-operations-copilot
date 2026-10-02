@@ -5,6 +5,12 @@ SaaS company — built to demonstrate product thinking, AI systems design,
 customer-operations judgment, and an evaluation-first approach to building
 AI features, not just a multi-agent demo.
 
+**Live demo:** https://ai-support-operations-copilot-production.up.railway.app
+
+The public deployment runs in deterministic [Demo Mode](#two-modes-demo-and-live):
+synthetic data, scripted replays, no API key and no live model calls. The recorded
+2026-09-24 live evaluation is on its Evaluations page.
+
 Start here:
 
 - [PRODUCT_SPEC.md](PRODUCT_SPEC.md) — what this is and who it's for
@@ -96,8 +102,10 @@ Open [http://localhost:3000](http://localhost:3000). Requires Node `^20.19 || ^2
 
 ## Replit deployment
 
-The public demo is a single Replit instance in Demo Mode. It is configured by
-[`.replit`](.replit):
+The [live demo](#ai-support-operations-copilot) runs on Railway: one service, one
+replica, `npm run start:demo` with `AI_MODE=demo` and `DATABASE_URL=file:./demo.db`, and
+no persistent volume. The same Demo Mode deployment can also run as a single Replit
+instance, configured by [`.replit`](.replit):
 
 | Step | Command |
 |---|---|
@@ -132,7 +140,7 @@ already holds real (non-simulated) results. It never touches `eval.db`.
 - `.replit` was written without access to Replit and is untested there. If a deployment
   misbehaves, check its module name, deployment type and port keys first.
 
-The public demo's URL is not recorded in this repository.
+The public demo's URL is listed at the top of this README.
 
 ## Evaluation
 
